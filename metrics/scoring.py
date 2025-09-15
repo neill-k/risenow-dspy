@@ -170,20 +170,26 @@ def make_llm_judge_metric(max_items: int = 8, include_individual_scores: bool = 
         
         slim = [_enhanced_slim(v) for v in vendors[:max_items]]
         
+        # Initialize variables to avoid UnboundLocalError if judge fails
+        j: Optional[Any] = None
+        fb: str = ""
+
         try:
             j = judge(category=cat, country_or_region=region, vendor_list=slim)
             s = float(getattr(j, "score", 0.0))
             if s > 1.0 and s <= 100.0: 
                 s = s / 100.0
+            fb = (getattr(j, "feedback", "") or "").strip()
         except Exception as e:
             s = 0.0
+            fb = f"Scored {s:.2f}."
             
+        # Clamp score and ensure feedback is populated
         s = max(0.0, min(1.0, s))
-        fb = (getattr(j, "feedback", "") or "").strip() or f"Scored {s:.2f}."
+        if not fb:
+            fb = f"Scored {s:.2f}."
         
         result = dspy.Prediction(score=float(s), feedback=fb)
-        if individual_scores:
-            result.individual_scores = individual_scores
             
         return result
     

@@ -29,10 +29,14 @@ class Vendor(BaseModel):
 
 
 class VendorSearchResult(dspy.Signature):
-    """DSPy signature for vendor discovery AI assistant."""
-    
-    """You are a vendor discovery AI assistant. You are given a list of tools to use to find the top 'n' vendors for a given category.
-    You should decide the right tool to use, and how to use it, to find the best vendors for the given category."""
+    """DSPy signature for the vendor-discovery ReAct agent.
+
+    You are a vendor-discovery AI assistant. You are given a list of tools and
+    must decide which tool(s) to invoke and how, in order to return the top *n*
+    vendors for the requested `category` (optionally restricted to
+    `country_or_region`). Populate `vendor_list` with fully-specified `Vendor`
+    objects that satisfy the data-model requirements.
+    """
     
     category: str = dspy.InputField(description="The category of vendors to find, e.g. 'cloud hosting providers', 'CRM systems', etc.")
     n: int = dspy.InputField(description="The number of top vendors to find")
@@ -41,21 +45,24 @@ class VendorSearchResult(dspy.Signature):
 
 
 class JudgeVendors(dspy.Signature):
-    """DSPy signature for evaluating vendor lists."""
-    
-    """
+    """DSPy signature for LLM-based vendor-list evaluation.
+
     You are an expert procurement evaluator.
-    Task: Given a vendor_list for the target category and optional region, return a single overall quality score in [0,1]
-    and a brief feedback string (<= 50 words).
+    Task: Given a `vendor_list` for the target `category` (and optional
+    `country_or_region`) return:
+        • `score` – a single overall quality value ∈ [0, 1]
+        • `feedback` – ≤ 50-word, actionable comment
 
-    Definition of "quality":
-      • Relevance to "General Industrial Supplies" (broad MRO/catalog; not a single-product vendor; not a marketplace).
-      • Region fit (serves the requested country_or_region if provided).
-      • Non-duplication (unique suppliers).
-      • Basic contact completeness (site + at least one email/phone per vendor).
-      • Overall credibility (well-known or plausibly legitimate suppliers).
+    Quality considerations:
+      • Relevance to “General Industrial Supplies” (broad MRO catalogue; not
+        a single-product vendor; not a marketplace).
+      • Region fit (serves `country_or_region`, if provided).
+      • No duplicates.
+      • Contact completeness (website + ≥1 email/phone).
+      • Credibility (recognised or plausibly legitimate suppliers).
 
-    Output strictly as a number in [0,1] and a short feedback sentence. Do not restate the vendor list.
+    Output MUST be a number between 0 and 1 and a short feedback sentence –
+    do **not** restate the vendor list.
     """
     
     category: str = dspy.InputField()

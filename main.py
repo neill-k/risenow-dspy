@@ -23,14 +23,14 @@ async def main():
     setup_instrumentation()
     
     # Configure DSPy with OpenAI models
-    dspy.configure(lm="openai/gpt-5-mini-2025-08-07")
-    reflection_llm = dspy.LM('openai/gpt-5-2025-08-07')
+    # Use a public model that exists today.
+    dspy.configure(lm="openai/gpt-4o-mini")
     
     # Create LLM judge metric
     llm_metric = make_llm_judge_metric(max_items=15, include_individual_scores=True)
     
-    # Setup GEPA optimizer
-    gepa_optimizer = GEPA(metric=llm_metric)
+    # Setup GEPA optimizer (configured later once student & trainset are ready)
+    gepa_optimizer: GEPA | None = None
     
     # Get Tavily MCP stream URL
     tavily_stream_url = get_tavily_stream_url()
@@ -47,8 +47,32 @@ async def main():
             # Create ReAct agent with tools
             react = dspy.ReAct(VendorSearchResult, tools=dspy_tools, max_iters=50)
             
-            # Run vendor search
-            result = await react.acall(category="General Industrial Supplies", n=15)
+            # ------------------------------------------------------------------
+            # Build a tiny trainset for GEPA (few-shot reflective optimization)
+            # ------------------------------------------------------------------
+            trainset = [
+                dspy.Example(
+                    category="General Industrial Supplies",
+                    n=10,
+                    country_or_region="United States",
+                ).with_inputs("category", "n", "country_or_region"),
+                dspy.Example(
+                    category="General Industrial Supplies",
+                    n=5,
+                    country_or_region=None,
+                ).with_inputs("category", "n", "country_or_region"),
+            ]
+
+            # Instantiate and compile GEPA
+            gepa_optimizer = GEPA(metric=llm_metric, auto="light")
+            optimized = gepa_optimizer.compile(student=react, trainset=trainset)
+
+            # Run vendor search with the optimized program
+            result = await optimized.acall(
+                category="General Industrial Supplies",
+                n=15,
+                country_or_region="United States",
+            )
             
             return result
 
