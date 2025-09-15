@@ -1,37 +1,52 @@
-"""Main script for vendor discovery optimization using GEPA and Tavily MCP."""
+"""Main script for vendor discovery optimization using GEPA with Tavily tools."""
 
-import asyncio
 import logging
 logging.basicConfig(level=logging.INFO)
 from typing import Any
 import dspy
 from dspy import GEPA, Prediction
-from mcp.client.streamable_http import streamablehttp_client
-from mcp import ClientSession
 
 from config.environment import (
-    validate_environment, 
-    setup_instrumentation, 
-    get_tavily_stream_url,
+    validate_environment,
+    get_primary_lm_config,
+    get_reflection_lm_config,
     get_gepa_settings,
 )
 from models.vendor import VendorSearchResult
 from metrics.scoring import make_llm_judge_metric
+from tools.web_tools import create_dspy_tools
 
 logger = logging.getLogger(__name__)
 
 
-async def main():
-    """Main execution function for vendor discovery optimization."""
+def run(category: str = "General Industrial Supplies", n: int = 15, country_or_region: str | None = "United States") -> dspy.Prediction:
+    """
+    Run vendor discovery with GEPA optimization.
     
-    # Validate environment and setup instrumentation
+    Parameters
+    ----------
+    category : str
+        Category of vendors to find
+    n : int
+        Number of vendors to return
+    country_or_region : str | None
+        Optional region filter
+        
+    Returns
+    -------
+    dspy.Prediction
+        Result containing vendor_list
+    """
+    # Validate environment
     validate_environment()
-    setup_instrumentation()
     
     # Configure DSPy with OpenAI models
-    primary_lm = dspy.LM(model="openai/gpt-5-mini", temperature=1, max_tokens=100000)
-    dspy.configure(lm=primary_lm, allow_tool_async_sync_conversion=True)
-    reflection_lm = dspy.LM(model="openai/gpt-5", temperature=1, max_tokens=32000)
+    primary_config = get_primary_lm_config()
+    primary_lm = dspy.LM(**primary_config)
+    dspy.configure(lm=primary_lm)
+    
+    reflection_config = get_reflection_lm_config()
+    reflection_lm = dspy.LM(**reflection_config)
     
     # Create LLM judge metric
     llm_metric = make_llm_judge_metric(max_items=15, include_individual_scores=True)
@@ -59,85 +74,68 @@ async def main():
         logger.info("GEPA metric call %s -> score %.3f", metric_call_count, score)
         return {"score": score, "feedback": feedback or f"Scored {score:.2f}."}
 
-
-    # Configure GEPA behaviour from environment variables
+    # Configure GEPA from environment variables
     gepa_settings = get_gepa_settings()
-    gepa_enabled = gepa_settings["enabled"]
     gepa_max_metric_calls = max(0, gepa_settings["max_metric_calls"])
     gepa_num_threads = max(1, gepa_settings["num_threads"])
     
-    # Get Tavily MCP stream URL
-    tavily_stream_url = get_tavily_stream_url()
+    # Get Tavily tools
+    tavily_tools = create_dspy_tools()
+    logger.info(f"Created {len(tavily_tools)} Tavily tools")
     
-    # Connect to Tavily MCP and run vendor search
-    async with streamablehttp_client(tavily_stream_url) as (read, write, _):
-        print("Connected to Tavily MCP stream.")
-        async with ClientSession(read, write) as session:
-            print("Initialized Tavily MCP client session.")
-            await session.initialize()
-            # List available tools from MCP
-            print("Listing available tools from MCP...")
-            tools = await session.list_tools()
-            print(f"Retrieved {len(tools.tools)} tools from MCP.")
-            # Convert MCP tools to DSPy tools
-            dspy_tools = [dspy.Tool.from_mcp_tool(session, t) for t in tools.tools]
-            print(f"Converted {len(dspy_tools)} MCP tools to DSPy tools.")
-            # Create ReAct agent with tools
-            react = dspy.ReAct(VendorSearchResult, tools=dspy_tools, max_iters=50)
-            print("Created ReAct agent with DSPy tools.")
-            # ------------------------------------------------------------------
-            # Build a tiny trainset for GEPA (few-shot reflective optimization)
-            # ------------------------------------------------------------------
-            trainset = [
-                dspy.Example(
-                    category="General Industrial Supplies",
-                    n=10,
-                    country_or_region="United States",
-                ).with_inputs("category", "n", "country_or_region"),
-                dspy.Example(
-                    category="General Industrial Supplies",
-                    n=5,
-                    country_or_region=None,
-                ).with_inputs("category", "n", "country_or_region"),
-            ]
-            print(f"Constructed GEPA trainset with {len(trainset)} examples.")
+    # Create ReAct agent with tools
+    react = dspy.ReAct(VendorSearchResult, tools=tavily_tools, max_iters=50)
+    logger.info("Created ReAct agent with Tavily tools")
+    
+    # Build a tiny trainset for GEPA (few-shot reflective optimization)
+    trainset = [
+        dspy.Example(
+            category="General Industrial Supplies",
+            n=10,
+            country_or_region="United States",
+        ).with_inputs("category", "n", "country_or_region"),
+        dspy.Example(
+            category="General Industrial Supplies",
+            n=5,
+            country_or_region=None,
+        ).with_inputs("category", "n", "country_or_region"),
+    ]
+    logger.info(f"Constructed GEPA trainset with {len(trainset)} examples")
 
-            # Optionally run GEPA compile step (can be disabled or tuned via env)
-            optimized_program = react
-            if gepa_enabled and gepa_max_metric_calls > 0:
-                effective_max_calls = max(len(trainset), gepa_max_metric_calls)
-                gepa_optimizer = GEPA(
-                    metric=gepa_metric,
-                    reflection_lm=reflection_lm,
-                    max_metric_calls=effective_max_calls,
-                    num_threads=gepa_num_threads,
-                )
-                print("Starting GEPA optimization...")
-                optimized_program = gepa_optimizer.compile(student=react, trainset=trainset)
-                print("GEPA optimization completed.")
-                logger.info(
-                    "GEPA compile running with max_metric_calls=%s",
-                    effective_max_calls,
-                )
-            else:
-                if not gepa_enabled:
-                    logger.info("GEPA disabled via GEPA_ENABLED; running base agent.")
-                else:
-                    logger.info("GEPA_MAX_METRIC_CALLS <= 0; running base agent.")
-
-            # Run vendor search with the optimized (or base) program
-            result = await optimized_program.acall(
-                category="General Industrial Supplies",
-                n=15,
-                country_or_region="United States",
-            )
-            
-            return result
+    # Run GEPA optimization
+    effective_max_calls = max(len(trainset), gepa_max_metric_calls)
+    logger.info(f"Starting GEPA optimization with max_metric_calls={effective_max_calls}")
+    
+    gepa_optimizer = GEPA(
+        metric=gepa_metric,
+        reflection_lm=reflection_lm,
+        max_metric_calls=effective_max_calls,
+        num_threads=gepa_num_threads,
+    )
+    
+    optimized_program = gepa_optimizer.compile(student=react, trainset=trainset)
+    logger.info("GEPA optimization completed")
+    
+    # Run vendor search with the optimized program
+    result = optimized_program(
+        category=category,
+        n=n,
+        country_or_region=country_or_region,
+    )
+    
+    return result
 
 
 if __name__ == "__main__":
-    result = asyncio.run(main())
-    print("Vendor discovery completed:")
-    print(f"Found {len(result.vendor_list)} vendors")
+    result = run()
+    print(f"\nVendor discovery completed: Found {len(result.vendor_list)} vendors")
+    
     for i, vendor in enumerate(result.vendor_list, 1):
-        print(f"{i}. {vendor.name} - {vendor.website}")
+        print(f"{i}. {vendor.name}")
+        print(f"   URL: {vendor.website}")
+        if vendor.contact_emails and len(vendor.contact_emails) > 0:
+            print(f"   Email: {vendor.contact_emails[0].email}")
+        if vendor.countries_served:
+            print(f"   Serves: {', '.join(vendor.countries_served[:3])}" + 
+                  (f" + {len(vendor.countries_served)-3} more" if len(vendor.countries_served) > 3 else ""))
+        print()

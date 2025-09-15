@@ -29,9 +29,7 @@ class Vendor(BaseModel):
 
 
 class VendorSearchResult(dspy.Signature):
-    """DSPy signature for the vendor-discovery ReAct agent.
-
-    You are a vendor-discovery AI assistant. You are given a list of tools and
+    """You are a vendor-discovery AI assistant. You are given a list of tools and
     must decide which tool(s) to invoke and how, in order to return the top *n*
     vendors for the requested `category` (optionally restricted to
     `country_or_region`). Populate `vendor_list` with fully-specified `Vendor`
