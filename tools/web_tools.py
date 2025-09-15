@@ -77,7 +77,7 @@ def tavily_extract(urls, timeout: float = 10.0, extract_depth: str = "basic"):
         resp = tav.extract(urls=urls, extract_depth=extract_depth)
         return resp
     except Exception as e:  # pragma: no cover
-        raise RuntimeError(f\"Tavily extract failed: {e}\") from e
+        raise RuntimeError(f"Tavily extract failed: {e}") from e
 
 
 def tavily_crawl(urls, max_depth: int = 1, max_pages: int = 25, timeout: float = 10.0):
@@ -106,7 +106,7 @@ def tavily_crawl(urls, max_depth: int = 1, max_pages: int = 25, timeout: float =
         tav = TavilyClient(api_key=TAVILY_API_KEY, timeout=timeout)
         return tav.crawl(urls=urls, max_depth=max_depth, max_pages=max_pages)
     except Exception as e:  # pragma: no cover
-        raise RuntimeError(f\"Tavily crawl failed: {e}\") from e
+        raise RuntimeError(f"Tavily crawl failed: {e}") from e
 
 
 def tavily_map(queries, max_results: int = 10, timeout: float = 10.0):
@@ -133,7 +133,7 @@ def tavily_map(queries, max_results: int = 10, timeout: float = 10.0):
         tav = TavilyClient(api_key=TAVILY_API_KEY, timeout=timeout)
         return tav.map(queries=queries, max_results=max_results)
     except Exception as e:  # pragma: no cover
-        raise RuntimeError(f\"Tavily map failed: {e}\") from e
+        raise RuntimeError(f"Tavily map failed: {e}") from e
 
 
 def get_page(url: str, timeout: float = 12.0):
@@ -195,22 +195,22 @@ def create_dspy_tools():
     """
     search_tool = dspy.Tool(
         tavily_search,
-        name=\"tavily_search\",
-        desc=\"Tavily web search. Args: query:str, max_results:int=20 -> list of results\",
+        name="tavily_search",
+        desc="Tavily web search. Args: query:str, max_results:int=20 -> list of results",
     )
     extract_tool = dspy.Tool(
         tavily_extract,
-        name=\"tavily_extract\",
-        desc=\"Extract page content. Args: urls:list[str]|str, extract_depth:str='basic' -> dict\",
+        name="tavily_extract",
+        desc="Extract page content. Args: urls:list[str]|str, extract_depth:str='basic' -> dict",
     )
     crawl_tool = dspy.Tool(
         tavily_crawl,
-        name=\"tavily_crawl\",
-        desc=\"Crawl site(s). Args: urls:list[str]|str, max_depth:int=1, max_pages:int=25 -> dict\",
+        name="tavily_crawl",
+        desc="Crawl site(s). Args: urls:list[str]|str, max_depth:int=1, max_pages:int=25 -> dict",
     )
     map_tool = dspy.Tool(
         tavily_map,
-        name=\"tavily_map\",
-        desc=\"Knowledge map. Args: queries:list[str]|str, max_results:int=10 -> dict\",
+        name="tavily_map",
+        desc="Knowledge map. Args: queries:list[str]|str, max_results:int=10 -> dict",
     )
     return search_tool, extract_tool, crawl_tool, map_tool
