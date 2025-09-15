@@ -4,8 +4,8 @@ import re
 from typing import List, Dict, Any, Optional
 import dspy
 from dspy import Example
-from ..models.vendor import Vendor, JudgeVendors
-from ..data.examples import general_industrial_supplies_example_n15
+from models.vendor import Vendor, JudgeVendors
+from data.examples import general_industrial_supplies_example_n15
 
 
 def contains_phone_number(vendor: Vendor) -> float:

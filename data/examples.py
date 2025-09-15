@@ -1,7 +1,7 @@
 """Example data for the vendor discovery system."""
 
 import dspy
-from ..models.vendor import Vendor, ContactEmail, PhoneNumber
+from models.vendor import Vendor, ContactEmail, PhoneNumber
 
 
 general_industrial_supplies_example_n15 = dspy.Example(

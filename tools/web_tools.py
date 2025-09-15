@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from tavily import TavilyClient
 import dspy
-from ..config.environment import TAVILY_API_KEY
+from config.environment import TAVILY_API_KEY
 
 
 # Global page cache for efficiency
