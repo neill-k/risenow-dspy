@@ -58,7 +58,7 @@ def run(category: str = "General Industrial Supplies", n: int = 15, country_or_r
         trace: Any | None = None,
         pred_name: str | None = None,
         pred_trace: Any | None = None,
-    ) -> dict[str, Any]:
+    ) -> Prediction:
         nonlocal metric_call_count
         metric_call_count += 1
         raw = llm_metric(gold, pred, trace, pred_name, pred_trace)
@@ -71,8 +71,10 @@ def run(category: str = "General Industrial Supplies", n: int = 15, country_or_r
         else:
             score = float(raw or 0.0)
             feedback = f"Scored {score:.2f}."
+        score = max(0.0, min(1.0, score))
+        feedback = feedback or f"Scored {score:.2f}."
         logger.info("GEPA metric call %s -> score %.3f", metric_call_count, score)
-        return {"score": score, "feedback": feedback or f"Scored {score:.2f}."}
+        return Prediction(score=score, feedback=feedback)
 
     # Configure GEPA from environment variables
     gepa_settings = get_gepa_settings()
@@ -145,3 +147,4 @@ if __name__ == "__main__":
             print(f"   Serves: {', '.join(vendor.countries_served[:3])}" + 
                   (f" + {len(vendor.countries_served)-3} more" if len(vendor.countries_served) > 3 else ""))
         print()
+
