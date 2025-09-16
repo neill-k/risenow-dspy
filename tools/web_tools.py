@@ -52,7 +52,7 @@ def tavily_search(query: str, max_results: int = 20):
     return search_web(query=query, max_results=max_results)
 
 
-def tavily_extract(urls, timeout: float = 10.0, extract_depth: str = "basic"):
+def tavily_extract(urls):
     """
     Extract full text / metadata from one or more URLs via Tavily Extract API.
 
@@ -60,10 +60,6 @@ def tavily_extract(urls, timeout: float = 10.0, extract_depth: str = "basic"):
     ----------
     urls : str | list[str]
         Single URL or list of URLs to extract.
-    timeout : float, optional
-        Request timeout per URL in seconds (default 10.0).
-    extract_depth : {\"basic\", \"advanced\"}, optional
-        Extraction depth (see Tavily docs). \"advanced\" may consume extra credits.
 
     Returns
     -------
@@ -73,115 +69,60 @@ def tavily_extract(urls, timeout: float = 10.0, extract_depth: str = "basic"):
     if isinstance(urls, str):
         urls = [urls]
     try:
-        tav = TavilyClient(api_key=TAVILY_API_KEY, timeout=timeout)
-        resp = tav.extract(urls=urls, extract_depth=extract_depth)
+        tav = TavilyClient(api_key=TAVILY_API_KEY)
+        resp = tav.extract(urls=urls)
         return resp
     except Exception as e:  # pragma: no cover
         raise RuntimeError(f"Tavily extract failed: {e}") from e
 
 
-def tavily_crawl(urls, max_depth: int = 1, max_pages: int = 25, timeout: float = 10.0):
+def tavily_crawl(url, max_depth: int = 1, max_pages: int = 25):
     """
-    Crawl one or more seed URLs and collect discovered links/content.
+    Crawl one seed URL and collect discovered links/content.
 
     Parameters
     ----------
-    urls : str | list[str]
-        Seed URL(s) to start crawling.
+    url : str
+        Seed URL to start crawling.
     max_depth : int, optional
         How many link-hops deep to follow (default 1).
     max_pages : int, optional
         Max pages to fetch (default 25).
-    timeout : float, optional
-        Request timeout per request (default 10.0).
 
     Returns
     -------
     dict
         Crawl job summary returned by Tavily.
     """
-    if isinstance(urls, str):
-        urls = [urls]
+
     try:
-        tav = TavilyClient(api_key=TAVILY_API_KEY, timeout=timeout)
-        return tav.crawl(urls=urls, max_depth=max_depth, max_pages=max_pages)
+        tav = TavilyClient(api_key=TAVILY_API_KEY)
+        return tav.crawl(url=url, max_depth=max_depth, max_pages=max_pages)
     except Exception as e:  # pragma: no cover
         raise RuntimeError(f"Tavily crawl failed: {e}") from e
 
 
-def tavily_map(queries, max_results: int = 10, timeout: float = 10.0):
+def tavily_map(url, max_results: int = 10):
     """
-    Build a knowledge map for given queries using Tavily Map endpoint.
+    Tavily Map traverses websites like a graph and can explore hundreds of paths in parallel with intelligent discovery to generate comprehensive site maps.
 
     Parameters
     ----------
-    queries : str | list[str]
-        Topic(s) to map.
+    url : str
+        Seed URL to start crawling.
     max_results : int, optional
         Number of results per query (default 10).
-    timeout : float, optional
-        Request timeout (default 10.0).
 
     Returns
     -------
     dict
         Map response with nodes/edges describing relationships.
     """
-    if isinstance(queries, str):
-        queries = [queries]
     try:
-        tav = TavilyClient(api_key=TAVILY_API_KEY, timeout=timeout)
-        return tav.map(queries=queries, max_results=max_results)
+        tav = TavilyClient(api_key=TAVILY_API_KEY)
+        return tav.map(url=url, max_results=max_results)
     except Exception as e:  # pragma: no cover
         raise RuntimeError(f"Tavily map failed: {e}") from e
-
-
-def get_page(url: str, timeout: float = 12.0):
-    """
-    Fetch and parse a web page.
-    
-    Args:
-        url: URL to fetch
-        timeout: Request timeout in seconds
-        
-    Returns:
-        Dictionary with url, title, text, and links extracted from the page
-    """
-    if url in _page_cache: 
-        return _page_cache[url]
-    
-    with httpx.Client(follow_redirects=True, timeout=timeout,
-                      headers={"User-Agent": "SupplyChainAgent/1.0"}) as client:
-        r = client.get(url)
-        r.raise_for_status()
-    
-    soup = BeautifulSoup(r.text, "html.parser")
-    
-    # Remove script, style, and noscript tags
-    for tag in soup(["script","style","noscript"]): 
-        tag.decompose()
-    
-    # Extract text
-    text = " ".join(soup.get_text(" ").split())
-    
-    # Extract links
-    links = []
-    for a in soup.find_all("a", href=True):
-        links.append({
-            "text": " ".join(a.stripped_strings)[:120], 
-            "href": urljoin(url, a["href"])
-        })
-    
-    page = {
-        "url": str(r.url), 
-        "title": (soup.title.string.strip() if soup.title else ""), 
-        "text": text, 
-        "links": links
-    }
-    
-    _page_cache[page["url"]] = page
-    return page
-
 
 # Create DSPy tools
 def create_dspy_tools():

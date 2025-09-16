@@ -84,14 +84,14 @@ def run(category: str = "General Industrial Supplies", n: int = 15, country_or_r
     logger.info(f"Created {len(tavily_tools)} Tavily tools")
     
     # Create ReAct agent with tools
-    react = dspy.ReAct(VendorSearchResult, tools=tavily_tools, max_iters=50)
+    react = dspy.ReAct(VendorSearchResult, tools=list(tavily_tools), max_iters=50)
     logger.info("Created ReAct agent with Tavily tools")
     
     # Build a tiny trainset for GEPA (few-shot reflective optimization)
     trainset = [
         dspy.Example(
             category="General Industrial Supplies",
-            n=10,
+            n=15,
             country_or_region="United States",
         ).with_inputs("category", "n", "country_or_region"),
         dspy.Example(
@@ -127,6 +127,12 @@ def run(category: str = "General Industrial Supplies", n: int = 15, country_or_r
 
 
 if __name__ == "__main__":
+    import mlflow
+    from dotenv import load_dotenv
+    load_dotenv()  # Load environment variables from .env file
+    mlflow.dspy.autolog()
+    
+
     result = run()
     print(f"\nVendor discovery completed: Found {len(result.vendor_list)} vendors")
     

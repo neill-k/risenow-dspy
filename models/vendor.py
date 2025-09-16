@@ -20,7 +20,7 @@ class PhoneNumber(BaseModel):
 class Vendor(BaseModel):
     """Model for vendor information."""
     name: str = Field(..., description="The name of the vendor")
-    website: HttpUrl = Field(..., description="The vendor's website URL")
+    website: str = Field(..., description="The vendor's website URL")
     description: str = Field(..., description="A brief description of the vendor")
     justification: str = Field(..., description="A brief justification for why this vendor was chosen")
     contact_emails: Optional[List[ContactEmail]] = Field(default=None, description="A list of contact email addresses for the vendor")
