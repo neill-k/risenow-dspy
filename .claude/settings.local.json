@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m compileall:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:dspy.ai)",
+      "WebFetch(domain:gist.github.com)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

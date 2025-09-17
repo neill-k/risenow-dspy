@@ -20,7 +20,7 @@ class PhoneNumber(BaseModel):
 class Vendor(BaseModel):
     """Model for vendor information."""
     name: str = Field(..., description="The name of the vendor")
-    website: HttpUrl = Field(..., description="The vendor's website URL")
+    website: str = Field(..., description="The vendor's website URL")
     description: str = Field(..., description="A brief description of the vendor")
     justification: str = Field(..., description="A brief justification for why this vendor was chosen")
     contact_emails: Optional[List[ContactEmail]] = Field(default=None, description="A list of contact email addresses for the vendor")
@@ -29,9 +29,7 @@ class Vendor(BaseModel):
 
 
 class VendorSearchResult(dspy.Signature):
-    """DSPy signature for the vendor-discovery ReAct agent.
-
-    You are a vendor-discovery AI assistant. You are given a list of tools and
+    """You are a vendor-discovery AI assistant. You are given a list of tools and
     must decide which tool(s) to invoke and how, in order to return the top *n*
     vendors for the requested `category` (optionally restricted to
     `country_or_region`). Populate `vendor_list` with fully-specified `Vendor`
