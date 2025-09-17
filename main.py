@@ -2,7 +2,7 @@
 
 import logging
 logging.basicConfig(level=logging.INFO)
-from typing import Any
+from typing import Any, Optional
 import dspy
 from dspy import GEPA, Prediction
 
@@ -13,8 +13,15 @@ from config.environment import (
     get_gepa_settings,
 )
 from models.vendor import VendorSearchResult
+from models.pestle import PESTLEAnalysis
 from metrics.scoring import make_llm_judge_metric
+from metrics.pestle_scoring import make_pestle_llm_judge_metric
 from tools.web_tools import create_dspy_tools
+from agents.pestle_agent import (
+    create_pestle_agent,
+    create_pestle_trainset,
+    optimize_pestle_agent
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,23 +135,145 @@ def run(category: str = "General Industrial Supplies", n: int = 15, country_or_r
     return result
 
 
+def run_with_pestle(
+    category: str = "General Industrial Supplies",
+    n: int = 15,
+    country_or_region: str | None = "United States",
+    include_pestle: bool = True
+) -> dspy.Prediction:
+    """
+    Run vendor discovery with optional PESTLE analysis.
+
+    Parameters
+    ----------
+    category : str
+        Category of vendors to find
+    n : int
+        Number of vendors to return
+    country_or_region : str | None
+        Optional region filter
+    include_pestle : bool
+        Whether to include PESTLE analysis
+
+    Returns
+    -------
+    dspy.Prediction
+        Result containing vendor_list and optionally pestle_analysis
+    """
+    # Run vendor discovery (environment setup happens inside run())
+    logger.info("Starting vendor discovery...")
+    vendor_result = run(category=category, n=n, country_or_region=country_or_region)
+
+    # Optionally run PESTLE analysis
+    pestle_analysis = None
+    if include_pestle:
+        logger.info("Starting PESTLE analysis...")
+
+        # Get reflection LM for PESTLE optimization
+        reflection_config = get_reflection_lm_config()
+        reflection_lm = dspy.LM(**reflection_config)
+
+        # Create PESTLE agent
+        pestle_agent = create_pestle_agent(use_tools=True, max_iters=30)
+
+        # Create PESTLE metric
+        pestle_metric = make_pestle_llm_judge_metric(include_details=True)
+
+        # Create trainset for PESTLE
+        pestle_trainset = create_pestle_trainset()
+
+        # Configure GEPA for PESTLE
+        gepa_settings = get_gepa_settings()
+
+        # Create metric wrapper for GEPA
+        def gepa_pestle_metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
+            raw = pestle_metric(gold, pred, trace, pred_name, pred_trace)
+            if isinstance(raw, Prediction):
+                score = float(getattr(raw, "score", 0.0) or 0.0)
+                feedback = (getattr(raw, "feedback", "") or "").strip()
+            else:
+                score = float(raw.get("score", 0.0) or 0.0)
+                feedback = str(raw.get("feedback", "") or "").strip()
+            score = max(0.0, min(1.0, score))
+            feedback = feedback or f"Scored {score:.2f}."
+            return Prediction(score=score, feedback=feedback)
+
+        # Optimize PESTLE agent
+        optimized_pestle = optimize_pestle_agent(
+            agent=pestle_agent,
+            metric=gepa_pestle_metric,
+            trainset=pestle_trainset,
+            optimizer_class=GEPA,
+            reflection_lm=reflection_lm,
+            max_metric_calls=max(len(pestle_trainset), gepa_settings["max_metric_calls"]),
+            num_threads=gepa_settings["num_threads"]
+        )
+
+        # Run PESTLE analysis
+        pestle_result = optimized_pestle(
+            category=category,
+            region=country_or_region,
+            focus_areas=None
+        )
+
+        if hasattr(pestle_result, 'pestle_analysis'):
+            pestle_analysis = pestle_result.pestle_analysis
+            logger.info("PESTLE analysis completed")
+
+    # Combine results
+    combined_result = dspy.Prediction(
+        vendor_list=vendor_result.vendor_list,
+        pestle_analysis=pestle_analysis
+    )
+
+    return combined_result
+
+
 if __name__ == "__main__":
     import mlflow
     from dotenv import load_dotenv
     load_dotenv()  # Load environment variables from .env file
     mlflow.dspy.autolog()
-    
 
-    result = run()
+    # Run with PESTLE analysis
+    result = run_with_pestle(
+        category="General Industrial Supplies",
+        n=15,
+        country_or_region="United States",
+        include_pestle=True
+    )
+
     print(f"\nVendor discovery completed: Found {len(result.vendor_list)} vendors")
-    
+
     for i, vendor in enumerate(result.vendor_list, 1):
         print(f"{i}. {vendor.name}")
         print(f"   URL: {vendor.website}")
         if vendor.contact_emails and len(vendor.contact_emails) > 0:
             print(f"   Email: {vendor.contact_emails[0].email}")
         if vendor.countries_served:
-            print(f"   Serves: {', '.join(vendor.countries_served[:3])}" + 
+            print(f"   Serves: {', '.join(vendor.countries_served[:3])}" +
                   (f" + {len(vendor.countries_served)-3} more" if len(vendor.countries_served) > 3 else ""))
         print()
+
+    # Display PESTLE analysis if available
+    if result.pestle_analysis:
+        print("\n" + "=" * 60)
+        print("PESTLE ANALYSIS")
+        print("=" * 60)
+
+        pestle = result.pestle_analysis
+        print(f"\nExecutive Summary:")
+        print(f"{pestle.executive_summary}")
+
+        print(f"\nKey Opportunities:")
+        for i, opp in enumerate(pestle.opportunities[:5], 1):
+            print(f"  {i}. {opp}")
+
+        print(f"\nKey Threats:")
+        for i, threat in enumerate(pestle.threats[:5], 1):
+            print(f"  {i}. {threat}")
+
+        print(f"\nStrategic Recommendations:")
+        for i, rec in enumerate(pestle.strategic_recommendations[:5], 1):
+            print(f"  {i}. {rec}")
 
