@@ -11,7 +11,7 @@ from tools.web_tools import create_dspy_tools
 logger = logging.getLogger(__name__)
 
 
-def create_pestle_agent(use_tools: bool = True, max_iters: int = 30) -> dspy.Module:
+def create_pestle_agent(use_tools: bool = True, max_iters: int = 30, use_refine: bool = False) -> dspy.Module:
     """
     Create a PESTLE analysis agent following DSPy best practices.
 
@@ -21,6 +21,8 @@ def create_pestle_agent(use_tools: bool = True, max_iters: int = 30) -> dspy.Mod
         Whether to use ReAct with tools or ChainOfThought
     max_iters : int
         Maximum iterations for ReAct agent
+    use_refine : bool
+        Whether to wrap agent with Refine module for iterative improvement
 
     Returns
     -------
@@ -42,6 +44,11 @@ def create_pestle_agent(use_tools: bool = True, max_iters: int = 30) -> dspy.Mod
         # Use ChainOfThought for reasoning without external tools
         agent = dspy.ChainOfThought(PESTLEMarketAnalysis)
         logger.info("Created PESTLE ChainOfThought agent")
+
+    # Optionally wrap with Refine for iterative improvement
+    if use_refine:
+        agent = dspy.Refine(agent, max_iterations=3)
+        logger.info("Wrapped agent with Refine module for iterative improvement")
 
     return agent
 
