@@ -2,6 +2,8 @@
 
 import logging
 from typing import List
+from datetime import datetime
+from pathlib import Path
 from pprint import pprint
 
 import dspy
@@ -21,6 +23,60 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def write_markdown_report(vendors: List[Vendor], test_inputs: dict, output_dir: str = "outputs"):
+    """Write vendor discovery results to a markdown file."""
+    # Create output directory if it doesn't exist
+    output_path = Path(output_dir)
+    output_path.mkdir(exist_ok=True)
+
+    # Generate filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"vendor_discovery_{timestamp}.md"
+    filepath = output_path / filename
+
+    # Build markdown content
+    md_lines = []
+    md_lines.append("# Vendor Discovery Report")
+    md_lines.append(f"\n**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    md_lines.append("\n## Search Parameters")
+    md_lines.append(f"- **Category:** {test_inputs['category']}")
+    md_lines.append(f"- **Number Requested:** {test_inputs['n']}")
+    md_lines.append(f"- **Country/Region:** {test_inputs.get('country_or_region', 'Global')}")
+    md_lines.append(f"\n## Results Summary")
+    md_lines.append(f"Found **{len(vendors)}** vendors matching the criteria.")
+
+    md_lines.append("\n## Vendor Details\n")
+
+    for i, vendor in enumerate(vendors, 1):
+        md_lines.append(f"### {i}. {vendor.name}")
+        md_lines.append(f"\n**Website:** [{vendor.website}]({vendor.website})")
+        md_lines.append(f"\n**Description:** {vendor.description}")
+        md_lines.append(f"\n**Why Selected:** {vendor.justification}")
+
+        if vendor.contact_emails:
+            md_lines.append("\n**Contact Emails:**")
+            for email in vendor.contact_emails:
+                desc = f" ({email.description})" if email.description else ""
+                md_lines.append(f"- {email.email}{desc}")
+
+        if vendor.phone_numbers:
+            md_lines.append("\n**Phone Numbers:**")
+            for phone in vendor.phone_numbers:
+                desc = f" ({phone.description})" if phone.description else ""
+                md_lines.append(f"- {phone.number}{desc}")
+
+        if vendor.countries_served:
+            md_lines.append(f"\n**Countries Served:** {', '.join(vendor.countries_served)}")
+
+        md_lines.append("\n---\n")
+
+    # Write to file
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(md_lines))
+
+    return filepath
 
 
 def main():
@@ -92,6 +148,10 @@ def main():
 
                 if vendor.countries_served:
                     print(f"Countries: {', '.join(vendor.countries_served)}")
+
+            # Write results to markdown file
+            output_file = write_markdown_report(vendors, test_inputs)
+            logger.info(f"\n✅ Results saved to: {output_file}")
         else:
             logger.warning("No vendors found in the result")
 
