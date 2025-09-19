@@ -112,7 +112,7 @@ def comprehensive_vendor_score(vendor: Vendor, weights: Optional[dict] = None) -
 def make_llm_judge_metric(max_items: int = 8, include_individual_scores: bool = False, gold: Example = general_industrial_supplies_example_n15):
     """Create an LLM-based metric for evaluating vendor lists."""
     judge = dspy.Predict(JudgeVendors)
-    
+
     def _enhanced_slim(v: Any) -> Dict[str, Any]:
         """Enhanced slimming with quality indicators."""
         if isinstance(v, dict):
@@ -131,7 +131,7 @@ def make_llm_judge_metric(max_items: int = 8, include_individual_scores: bool = 
             emails = list(getattr(v, "contact_emails", []) or [])
             phones = list(getattr(v, "phone_numbers", []) or [])
             countries = list(getattr(v, "countries_served", []) or [])
-        
+
         # Add quality indicators
         result = {
             "name": name,
@@ -144,32 +144,17 @@ def make_llm_judge_metric(max_items: int = 8, include_individual_scores: bool = 
             "contact_completeness": len([x for x in [emails, phones] if x]),
             "geographic_reach": len(countries) if countries else 0
         }
-        
+
         return result
-    
+
     def metric(gold, pred, trace=None, pred_name=None, pred_trace=None):
         """Evaluate a vendor list prediction against gold standard."""
         cat = (gold.get("category") if isinstance(gold, dict) else getattr(gold, "category", None))
         region = (gold.get("country_or_region") if isinstance(gold, dict) else getattr(gold, "country_or_region", None))
         vendors = getattr(pred, "vendor_list", []) or []
-        
-        # Calculate individual scores if requested
-        individual_scores = []
-        if include_individual_scores and vendors:
-            for vendor in vendors[:max_items]:
-                if hasattr(vendor, '__dict__') or isinstance(vendor, dict):
-                    # Convert dict to Vendor if needed
-                    if isinstance(vendor, dict):
-                        try:
-                            vendor_obj = Vendor(**vendor)
-                            individual_scores.append(comprehensive_vendor_score(vendor_obj))
-                        except Exception:
-                            continue
-                    else:
-                        individual_scores.append(comprehensive_vendor_score(vendor))
-        
+
         slim = [_enhanced_slim(v) for v in vendors[:max_items]]
-        
+
         # Initialize variables to avoid UnboundLocalError if judge fails
         j: Optional[Any] = None
         fb: str = ""
@@ -177,20 +162,20 @@ def make_llm_judge_metric(max_items: int = 8, include_individual_scores: bool = 
         try:
             j = judge(category=cat, country_or_region=region, vendor_list=slim)
             s = float(getattr(j, "score", 0.0))
-            if s > 1.0 and s <= 100.0: 
+            if s > 1.0 and s <= 100.0:
                 s = s / 100.0
             fb = (getattr(j, "feedback", "") or "").strip()
         except Exception as e:
             s = 0.0
             fb = f"Scored {s:.2f}."
-            
+
         # Clamp score and ensure feedback is populated
         s = max(0.0, min(1.0, s))
         if not fb:
             fb = f"Scored {s:.2f}."
-        
+
         result = dspy.Prediction(score=float(s), feedback=fb)
-            
+
         return result
-    
+
     return metric

@@ -82,20 +82,10 @@ def create_vendor_metric(
         pred_trace: Any | None = None,
     ) -> Prediction:
         counter["count"] += 1
-        raw = llm_metric(gold, pred, trace, pred_name, pred_trace)
-        if isinstance(raw, Prediction):
-            score = float(getattr(raw, "score", 0.0) or 0.0)
-            feedback = (getattr(raw, "feedback", "") or "").strip()
-        elif isinstance(raw, Mapping):
-            score = float(raw.get("score", 0.0) or 0.0)
-            feedback = str(raw.get("feedback", "") or "").strip()
-        else:
-            score = float(raw or 0.0)
-            feedback = f"Scored {score:.2f}."
-        score = max(0.0, min(1.0, score))
-        feedback = feedback or f"Scored {score:.2f}."
+        result = llm_metric(gold, pred, trace, pred_name, pred_trace)
+        score = float(getattr(result, "score", 0.0))
         logger.info("Vendor metric call %s -> score %.3f", counter["count"], score)
-        return Prediction(score=score, feedback=feedback)
+        return result
 
     def get_calls() -> int:
         return counter["count"]
