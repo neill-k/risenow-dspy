@@ -23,8 +23,8 @@ class Vendor(BaseModel):
     website: str = Field(..., description="The vendor's website URL")
     description: str = Field(..., description="A brief description of the vendor")
     justification: str = Field(..., description="A brief justification for why this vendor was chosen")
-    contact_emails: Optional[List[ContactEmail]] = Field(default=None, description="A list of contact email addresses for the vendor")
-    phone_numbers: Optional[List[PhoneNumber]] = Field(default=None, description="A list of contact phone numbers for the vendor")
+    contact_emails: List[ContactEmail] = Field(default=..., description="A list of contact email addresses for the vendor")
+    phone_numbers: List[PhoneNumber] = Field(default=..., description="A list of contact phone numbers for the vendor")
     countries_served: Optional[List[str]] = Field(default=None, description="A list of countries where the vendor operates")
 
 
