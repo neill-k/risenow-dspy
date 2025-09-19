@@ -19,6 +19,14 @@ def _get_bool_env(var_name: str, default: bool) -> bool:
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
+LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY")
+LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY")
+_LANGFUSE_DEFAULT_HOST = "https://cloud.langfuse.com"
+LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", _LANGFUSE_DEFAULT_HOST)
+
+VENDOR_PROGRAM_PATH = os.getenv("VENDOR_PROGRAM_PATH", "data/artifacts/vendor_program.json")
+VENDOR_OPTIMIZE_ON_MISS = _get_bool_env("VENDOR_OPTIMIZE_ON_MISS", True)
+
 DSPY_MODEL = os.getenv("DSPY_MODEL", "openai/gpt-5-mini")
 DSPY_TEMPERATURE = float(os.getenv("DSPY_TEMPERATURE", "1.0"))
 DSPY_MAX_TOKENS = int(os.getenv("DSPY_MAX_TOKENS", "100000"))
@@ -50,6 +58,26 @@ def get_reflection_lm_config() -> dict[str, Any]:
 
 
 
+def is_langfuse_configured() -> bool:
+    """Return True when Langfuse credentials are available."""
+    return bool(LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY)
+
+
+def get_langfuse_host() -> str:
+    """Return the Langfuse host to use for OTLP exports."""
+    return LANGFUSE_HOST or _LANGFUSE_DEFAULT_HOST
+
+
+def should_optimize_vendor() -> bool:
+    """Return whether vendor optimization should run when no cache is present."""
+    return VENDOR_OPTIMIZE_ON_MISS
+
+
+def get_vendor_program_path() -> str:
+    """Return path where the compiled vendor program should be stored."""
+    return VENDOR_PROGRAM_PATH
+
+
 def get_gepa_settings() -> dict[str, Any]:
     """Return GEPA optimization configuration derived from environment variables."""
     max_calls = max(0, GEPA_MAX_METRIC_CALLS)
@@ -65,6 +93,3 @@ def validate_environment():
         raise ValueError("Missing OPENAI_API_KEY environment variable")
     if not TAVILY_API_KEY:
         raise ValueError("Missing TAVILY_API_KEY environment variable")
-
-# Langfuse instrumentation and Tavily MCP streaming have been removed to simplify
-# the environment setup and eliminate external tracing requirements.

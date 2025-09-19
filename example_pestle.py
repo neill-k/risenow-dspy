@@ -10,12 +10,14 @@ from config.environment import (
     get_primary_lm_config,
 )
 from agents.pestle_agent import create_pestle_agent
+from config.observability import setup_langfuse
 
 # Load environment variables
 load_dotenv()
 
 # Validate environment
 validate_environment()
+setup_langfuse()
 
 # Configure DSPy
 primary_config = get_primary_lm_config()

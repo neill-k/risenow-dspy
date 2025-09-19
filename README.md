@@ -63,6 +63,19 @@ risenow-dspy/
   - `run_pestle_analysis()`: Execute PESTLE analysis for a market category
   - `create_pestle_trainset()`: Generate training examples for optimization
   - `optimize_pestle_agent()`: Optimize agent with GEPA or other DSPy optimizers
+- **vendor_agent.py**: Vendor discovery agent implementation
+  - `create_vendor_agent()`: Create ReAct or ChainOfThought vendor agent
+  - `create_vendor_metric()`: Build LLM judge metric with call counter
+  - `create_vendor_trainset()`: Generate reusable vendor training examples
+  - `optimize_vendor_agent()`: Optimize vendor agent with GEPA or other DSPy optimizers
+
+### Optimize (`optimize/`)
+- **bootstrap_vendor.py**: Vendor BootstrapFewShot helpers
+  - `bootstrap_vendor_agent()`: Compile a vendor agent given a handful of seed prompts
+  - `save_vendor_bootstrap()`: Persist bootstrapped demos to JSONL for later reuse
+- **bootstrap_pestle.py**: PESTLE BootstrapFewShot helpers
+  - `bootstrap_pestle_agent()`: Compile a PESTLE agent with synthetic demos
+  - `save_pestle_bootstrap()`: Persist bootstrapped PESTLE demos to JSONL for later reuse
 
 ### Tools (`tools/`)
 - **web_tools.py**: Tavily-based web tools for research
@@ -99,6 +112,8 @@ Run vendor discovery with GEPA optimization:
 ```python
 python main.py
 ```
+
+The first run optimizes the vendor agent and caches the compiled program to `VENDOR_PROGRAM_PATH` (default `data/artifacts/vendor_program.json`). Subsequent runs reuse that cache unless you delete the file or pass `reuse_cached_program=False` when calling `run()`. Set the `VENDOR_OPTIMIZE_ON_MISS=0` environment variable (or call `run(optimize_if_missing=False)`) to skip GEPA entirely when the cache is absent.
 
 ### Vendor Discovery with PESTLE Analysis
 
@@ -187,6 +202,8 @@ pestle = result.pestle_analysis
 - `LANGFUSE_PUBLIC_KEY`: Langfuse public key for tracing
 - `LANGFUSE_SECRET_KEY`: Langfuse secret key for tracing
 - `LANGFUSE_HOST`: Langfuse host URL (defaults to US cloud)
+- `VENDOR_PROGRAM_PATH`: Optional path for caching the optimized vendor program (default: `data/artifacts/vendor_program.json`)
+- `VENDOR_OPTIMIZE_ON_MISS`: Set to `0`/`false` to skip GEPA when no cached program exists (defaults to `true`).
 
 ### DSPy Configuration
 - `DSPY_MODEL`: Primary model (default: openai/gpt-5-mini)
@@ -199,3 +216,18 @@ pestle = result.pestle_analysis
 ### GEPA Optimization
 - `GEPA_MAX_METRIC_CALLS`: Number of optimization iterations (default: 60)
 - `GEPA_NUM_THREADS`: Parallel threads for GEPA (default: 3)
+
+### Observability (Langfuse)
+- Provide `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`; set `LANGFUSE_HOST` (for example `https://us.cloud.langfuse.com`) if you use a non-default Langfuse region.
+- `main.run()` and the example scripts invoke `config.setup_langfuse()` automatically; traces are emitted whenever Langfuse credentials are present.
+- To instrument custom code paths, import `setup_langfuse` from `config` or `config.observability` and call it once before configuring DSPy.
+- Langfuse uses OpenTelemetry under the hood, so DSPy spans, Tavily tool calls, and GEPA metrics appear in the Langfuse UI for replay and analytics.
+- Spans capture vendor coverage (emails, phones, geography) and PESTLE insight counts so you can filter runs by data quality inside Langfuse.
+
+### BootstrapFewShot Seed Pipeline
+- Run `python -m optimize.bootstrap_vendor` (or call `optimize.bootstrap_vendor.bootstrap_vendor_agent()` from your own script) to generate synthetic vendor demos when you lack labeled data.
+- Bootstrapped demos are written to `data/artifacts/vendor_bootstrap.jsonl` by default and can seed future GEPA runs.
+- Adjust `max_bootstrapped_demos`, `max_rounds`, or supply custom seed examples to control how many synthetic traces are collected.
+
+
+
