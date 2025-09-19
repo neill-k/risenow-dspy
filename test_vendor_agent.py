@@ -5,6 +5,8 @@ from typing import List
 from datetime import datetime
 from pathlib import Path
 from pprint import pprint
+import io
+import sys
 
 import dspy
 from config.environment import (
@@ -12,6 +14,12 @@ from config.environment import (
     TAVILY_API_KEY,
     get_primary_lm_config,
     validate_environment
+)
+from config.observability import (
+    setup_langfuse,
+    observability_span,
+    generate_session_id,
+    set_span_attributes
 )
 from models.vendor import VendorSearchResult, Vendor
 from tools.web_tools import create_dspy_tools
@@ -25,7 +33,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def write_markdown_report(vendors: List[Vendor], test_inputs: dict, output_dir: str = "outputs"):
+def capture_inspect_history(n: int = 10) -> str:
+    """Capture dspy.inspect_history output as a string."""
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+    try:
+        dspy.inspect_history(n=n)
+        output = buffer.getvalue()
+    finally:
+        sys.stdout = old_stdout
+    return output
+
+
+def write_markdown_report(vendors: List[Vendor], test_inputs: dict, trace_output: str = "", output_dir: str = "outputs"):
     """Write vendor discovery results to a markdown file."""
     # Create output directory if it doesn't exist
     output_path = Path(output_dir)
@@ -72,6 +92,18 @@ def write_markdown_report(vendors: List[Vendor], test_inputs: dict, output_dir: 
 
         md_lines.append("\n---\n")
 
+    # Add trace information if available
+    if trace_output:
+        md_lines.append("\n## Agent Execution Trace\n")
+        md_lines.append("<details>")
+        md_lines.append("<summary>Click to view detailed LLM call history</summary>")
+        md_lines.append("")
+        md_lines.append("```")
+        md_lines.append(trace_output)
+        md_lines.append("```")
+        md_lines.append("</details>")
+        md_lines.append("")
+
     # Write to file
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write('\n'.join(md_lines))
@@ -91,6 +123,18 @@ def main():
         logger.error(f"Environment validation failed: {e}")
         return
 
+    # Setup Langfuse observability
+    logger.info("Setting up Langfuse observability...")
+    langfuse_client = setup_langfuse()
+    if langfuse_client:
+        logger.info("Langfuse tracing enabled")
+    else:
+        logger.info("Langfuse tracing not configured (optional)")
+
+    # Generate session ID for trace grouping
+    session_id = generate_session_id()
+    logger.info(f"Session ID: {session_id}")
+
     # Configure DSPy with the primary language model
     logger.info("Configuring DSPy...")
     lm_config = get_primary_lm_config()
@@ -105,12 +149,12 @@ def main():
 
     # Create the vendor agent with tools (ReAct mode)
     logger.info("Creating vendor discovery agent...")
-    agent = create_vendor_agent(use_tools=True, max_iters=30)
+    agent = create_vendor_agent(use_tools=True, max_iters=60)
 
     # Define test inputs
     test_inputs = {
-        "category": "Cloud Infrastructure Services",
-        "n": 5,
+        "category": "General Industrial Supplies",
+        "n": 15,
         "country_or_region": "United States"
     }
 
@@ -119,10 +163,39 @@ def main():
     logger.info(f"  Number of vendors: {test_inputs['n']}")
     logger.info(f"  Country/Region: {test_inputs['country_or_region']}")
 
-    # Execute the agent
+    # Execute the agent with observability span
     try:
-        logger.info("Executing agent (this may take a moment)...")
-        result = agent(**test_inputs)
+        span_attributes = {
+            "test.category": test_inputs['category'],
+            "test.n": test_inputs['n'],
+            "test.country_or_region": test_inputs.get('country_or_region', 'Global'),
+            "test.agent_type": "ReAct",
+            "test.use_tools": True,
+            "test.max_iters": 60,
+            "session.id": session_id
+        }
+
+        with observability_span("test_vendor_agent.execute", span_attributes, session_id=session_id) as span:
+            logger.info("Executing agent (this may take a moment)...")
+            result = agent(**test_inputs)
+
+            # Update span with result counts
+            if hasattr(result, 'vendor_list') and result.vendor_list:
+                set_span_attributes(span, {
+                    "result.vendor_count": len(result.vendor_list),
+                    "result.success": True
+                })
+            else:
+                set_span_attributes(span, {
+                    "result.vendor_count": 0,
+                    "result.success": False
+                })
+
+        # Capture DSPy trace history
+        logger.info("\n" + "="*60)
+        logger.info("CAPTURING LLM CALL HISTORY")
+        logger.info("="*60)
+        trace_output = capture_inspect_history(n=10)
 
         # Display results
         logger.info("\n" + "="*60)
@@ -149,18 +222,19 @@ def main():
                 if vendor.countries_served:
                     print(f"Countries: {', '.join(vendor.countries_served)}")
 
-            # Write results to markdown file
-            output_file = write_markdown_report(vendors, test_inputs)
+            # Write results to markdown file with trace
+            output_file = write_markdown_report(vendors, test_inputs, trace_output)
             logger.info(f"\n✅ Results saved to: {output_file}")
         else:
             logger.warning("No vendors found in the result")
 
-        # Optionally display the reasoning trace
-        if hasattr(result, 'rationale') and result.rationale:
-            logger.info("\n" + "="*60)
-            logger.info("AGENT REASONING TRACE")
-            logger.info("="*60)
-            print(result.rationale)
+        # Display LLM trace history to console (optional)
+        logger.info("\n" + "="*60)
+        logger.info("LLM CALL TRACE (Last 10 Calls)")
+        logger.info("="*60)
+        print(trace_output[:5000])  # Limit console output
+        if len(trace_output) > 5000:
+            print(f"\n... (truncated, full trace saved to markdown report)")
 
     except Exception as e:
         logger.error(f"Error executing agent: {e}")
