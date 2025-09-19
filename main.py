@@ -97,11 +97,11 @@ def run(
 
     with observability_span("vendor.run", run_span_attrs, session_id=session_id) as run_span:
         primary_config = get_primary_lm_config()
-        primary_lm = dspy.LM(**primary_config)
+        primary_lm = dspy.LM(**primary_config, num_retries=5)
         dspy.configure(lm=primary_lm)
 
         reflection_config = get_reflection_lm_config()
-        reflection_lm = dspy.LM(**reflection_config)
+        reflection_lm = dspy.LM(**reflection_config, num_retries=5)
 
         metric_call_count: Optional[int] = None
         program_source = "optimized"
@@ -277,7 +277,7 @@ def run_with_pestle(
             logger.info("Starting PESTLE analysis...")
 
             reflection_config = get_reflection_lm_config()
-            reflection_lm = dspy.LM(**reflection_config)
+            reflection_lm = dspy.LM(**reflection_config, num_retries=5)
 
             pestle_agent = create_pestle_agent(use_tools=True, max_iters=30)
             pestle_metric = make_pestle_llm_judge_metric(include_details=True)

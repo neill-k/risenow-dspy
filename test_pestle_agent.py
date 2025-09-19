@@ -227,7 +227,8 @@ def main():
         model=lm_config["model"],
         api_key=OPENAI_API_KEY,
         temperature=lm_config["temperature"],
-        max_tokens=lm_config["max_tokens"]
+        max_tokens=lm_config["max_tokens"],
+        num_retries=5  # Enable retries with exponential backoff for rate limits
     )
     dspy.settings.configure(lm=lm)
     logger.info(f"DSPy configured with model: {lm_config['model']}")
