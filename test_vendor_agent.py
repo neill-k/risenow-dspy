@@ -149,7 +149,7 @@ def main():
 
     # Create the vendor agent with tools (ReAct mode)
     logger.info("Creating vendor discovery agent...")
-    agent = create_vendor_agent(use_tools=True, max_iters=60)
+    agent = create_vendor_agent(use_tools=True, max_iters=30)
 
     # Define test inputs
     test_inputs = {
@@ -171,7 +171,7 @@ def main():
             "test.country_or_region": test_inputs.get('country_or_region', 'Global'),
             "test.agent_type": "ReAct",
             "test.use_tools": True,
-            "test.max_iters": 60,
+            "test.max_iters": 30,
             "session.id": session_id
         }
 

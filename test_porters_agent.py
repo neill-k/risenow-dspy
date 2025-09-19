@@ -234,7 +234,7 @@ def main():
 
     # Create the Porter's agent with tools (ReAct mode)
     logger.info("Creating Porter's 5 Forces analysis agent...")
-    agent = create_porters_agent(use_tools=True, max_iters=60)
+    agent = create_porters_agent(use_tools=True, max_iters=30)
 
     # Define test inputs
     test_inputs = {
@@ -255,7 +255,7 @@ def main():
             "test.region": test_inputs.get('region', 'Global'),
             "test.agent_type": "ReAct",
             "test.use_tools": True,
-            "test.max_iters": 60,
+            "test.max_iters": 30,
             "session.id": session_id
         }
 
