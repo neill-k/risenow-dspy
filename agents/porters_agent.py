@@ -6,6 +6,7 @@ import dspy
 from dspy import Example
 
 from models.porters import PortersFiveForcesAnalysis, PortersFiveForcesSignature
+from metrics.porters_scoring import make_porters_llm_judge_metric
 from tools.web_tools import create_dspy_tools
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,29 @@ def create_porters_agent(use_tools: bool = True, max_iters: int = 30, use_refine
         logger.info("Wrapped agent with Refine module for iterative improvement")
 
     return agent
+
+
+def create_porters_metric(include_details: bool = True):
+    """Build the LLM-based evaluation metric for Porter's analyses."""
+    judge_metric = make_porters_llm_judge_metric(include_details=include_details)
+    counter = {"count": 0}
+
+    def metric(
+        gold,
+        pred,
+        trace=None,
+        pred_name=None,
+        pred_trace=None,
+    ):
+        counter["count"] += 1
+        result = judge_metric(gold, pred, trace, pred_name, pred_trace)
+        score = float(getattr(result, "score", 0.0) or 0.0)
+        logger.info(
+            "Porter's metric call %s -> score %.3f", counter["count"], score
+        )
+        return result
+
+    return metric
 
 
 def run_porters_analysis(

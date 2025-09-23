@@ -3,6 +3,7 @@
 from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 import dspy
+from models.citation import Citation
 
 
 class ThreatOfNewEntrants(BaseModel):
@@ -208,6 +209,10 @@ class PortersFiveForcesAnalysis(BaseModel):
         ...,
         description="Executive summary of the Porter's 5 Forces analysis"
     )
+    citations: List[Citation] = Field(
+        default_factory=list,
+        description="Evidence sources referenced in this analysis"
+    )
 
 
 class PortersFiveForcesSignature(dspy.Signature):
@@ -224,6 +229,9 @@ class PortersFiveForcesSignature(dspy.Signature):
 
     Provide actionable strategic insights, recommendations, and identify key
     opportunities and threats based on your competitive analysis.
+
+    IMPORTANT: Include Citation objects from your research in the citations field.
+    Support your competitive analysis with verifiable sources.
     """
 
     category: str = dspy.InputField(

@@ -14,6 +14,13 @@ from .vendor_agent import (
     load_vendor_agent,
     save_vendor_agent,
 )
+from .rfp_agent import (
+    create_rfp_agent,
+    create_rfp_metric,
+    create_rfp_trainset,
+    optimize_rfp_agent,
+    generate_rfp_question_set,
+)
 
 __all__ = [
     "create_pestle_agent",
@@ -26,4 +33,9 @@ __all__ = [
     "optimize_vendor_agent",
     "load_vendor_agent",
     "save_vendor_agent",
+    "create_rfp_agent",
+    "create_rfp_metric",
+    "create_rfp_trainset",
+    "optimize_rfp_agent",
+    "generate_rfp_question_set",
 ]

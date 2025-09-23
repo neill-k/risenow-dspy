@@ -1,233 +1,138 @@
-# DSPy Vendor Discovery & Market Analysis System
+# DSPy Complete Analysis Pipeline: Vendor Discovery → Market Analysis → RFP Generation
 
-A comprehensive system for vendor discovery and market analysis using DSPy, featuring GEPA optimization, Tavily integration, and PESTLE analysis capabilities.
+A comprehensive DSPy-based system that executes a complete procurement analysis pipeline: parallel vendor discovery, market analysis (PESTLE & Porter's), vendor-specific SWOT assessments, and automated RFP question generation. The system leverages Tavily-powered research, GEPA optimization, and structured Pydantic models for deterministic, auditable results.
 
-## Structure
+## Repository Structure
 
 ```
 risenow-dspy/
-├── __init__.py                 # Main package init
-├── main.py                     # Main script for vendor discovery and PESTLE analysis
-├── example_pestle.py           # Example usage of PESTLE analysis
-├── config/
-│   ├── __init__.py
-│   └── environment.py          # Environment setup and configuration
-├── models/
-│   ├── __init__.py
-│   ├── vendor.py              # Vendor-related Pydantic models and DSPy signatures
-│   └── pestle.py              # PESTLE analysis models and signatures
-├── agents/
-│   ├── __init__.py
-│   └── pestle_agent.py        # PESTLE analysis agent implementation
-├── tools/
-│   ├── __init__.py
-│   └── web_tools.py           # Tavily-based web search and extraction tools
+├── __init__.py                 # Package init
+├── main.py                     # Vendor discovery orchestration entry point
+├── agents/                     # Agent implementations
+│   ├── pestle_agent.py         # PESTLE analysis agent
+│   ├── porters_agent.py        # Porter's 5 Forces agent
+│   ├── swot_agent.py           # Vendor SWOT agent
+│   ├── vendor_agent.py         # Vendor discovery agent
+│   └── rfp_agent.py            # Isolated RFP generation agent
+├── config/                     # Environment + observability utilities
+│   ├── environment.py          # API key validation and LM config
+│   └── observability.py        # Langfuse/OpenInference instrumentation
+├── data/
+│   ├── examples.py             # Legacy fixtures
+│   └── rfp_examples.py         # RFP agent sample payloads
 ├── metrics/
-│   ├── __init__.py
-│   ├── scoring.py             # Vendor scoring and evaluation metrics
-│   └── pestle_scoring.py      # PESTLE analysis quality metrics
-└── data/
-    ├── __init__.py
-    └── examples.py            # Example data and test cases
+│   ├── scoring.py              # Vendor scoring helpers
+│   ├── pestle_scoring.py       # PESTLE quality metrics
+│   └── rfp_scoring.py          # RFP question-set metrics
+├── models/
+│   ├── pestle.py               # PESTLE models & signatures
+│   ├── porters.py              # Porter's 5 Forces models & signatures
+│   ├── rfp.py                  # RFP models & signatures
+│   ├── swot.py                 # SWOT models & signatures
+│   └── vendor.py               # Vendor models & signatures
+├── tools/
+│   └── web_tools.py            # Tavily-based DSPy tools
+└── tests/
+    └── test_rfp_agent.py       # Stubbed RFP agent tests
 ```
 
-## Components
-
-### Config (`config/`)
-- **environment.py**: Environment variable validation and setup
-- Handles OpenAI, Langfuse, and Tavily API keys
-- Sets up DSPy instrumentation
-
-### Models (`models/`)
-- **vendor.py**: Vendor-related models and signatures
-  - `ContactEmail`: Email contact information
-  - `PhoneNumber`: Phone contact information
-  - `Vendor`: Complete vendor information model
-  - `VendorSearchResult`: DSPy signature for vendor discovery
-  - `JudgeVendors`: DSPy signature for vendor evaluation
-
-- **pestle.py**: PESTLE analysis models and signatures
-  - `PoliticalFactors`: Government policies, regulations, trade agreements
-  - `EconomicFactors`: Market size, growth rates, economic indicators
-  - `SocialFactors`: Consumer trends, demographics, cultural factors
-  - `TechnologicalFactors`: Innovation, disruption, digital transformation
-  - `LegalFactors`: Compliance requirements, liability issues, contracts
-  - `EnvironmentalFactors`: Sustainability, climate impact, green initiatives
-  - `PESTLEAnalysis`: Complete PESTLE analysis model
-  - `PESTLEMarketAnalysis`: DSPy signature for PESTLE analysis
-  - `JudgePESTLE`: DSPy signature for PESTLE evaluation
+## Key Components
 
 ### Agents (`agents/`)
-- **pestle_agent.py**: PESTLE analysis agent implementation
-  - `create_pestle_agent()`: Create ReAct or ChainOfThought PESTLE agent
-  - `run_pestle_analysis()`: Execute PESTLE analysis for a market category
-  - `create_pestle_trainset()`: Generate training examples for optimization
-  - `optimize_pestle_agent()`: Optimize agent with GEPA or other DSPy optimizers
-- **vendor_agent.py**: Vendor discovery agent implementation
-  - `create_vendor_agent()`: Create ReAct or ChainOfThought vendor agent
-  - `create_vendor_metric()`: Build LLM judge metric with call counter
-  - `create_vendor_trainset()`: Generate reusable vendor training examples
-  - `optimize_vendor_agent()`: Optimize vendor agent with GEPA or other DSPy optimizers
+- **vendor_agent.py**: ReAct/Chain-of-Thought agent that surfaces vendors, with GEPA optimization helpers and persistence.
+- **pestle_agent.py**: Market macro analysis across political, economic, social, technological, legal, and environmental factors.
+- **porters_agent.py**: Competitive landscape analysis following Porter's 5 Forces.
+- **swot_agent.py**: Vendor-specific SWOT assessment with caching and batch helpers.
+- **rfp_agent.py**: Isolated pipeline that extracts insights from prior analyses, mines public RFP references, and generates 100 categorized questions.
 
-### Optimize (`optimize/`)
-- **bootstrap_vendor.py**: Vendor BootstrapFewShot helpers
-  - `bootstrap_vendor_agent()`: Compile a vendor agent given a handful of seed prompts
-  - `save_vendor_bootstrap()`: Persist bootstrapped demos to JSONL for later reuse
-- **bootstrap_pestle.py**: PESTLE BootstrapFewShot helpers
-  - `bootstrap_pestle_agent()`: Compile a PESTLE agent with synthetic demos
-  - `save_pestle_bootstrap()`: Persist bootstrapped PESTLE demos to JSONL for later reuse
-
-### Tools (`tools/`)
-- **web_tools.py**: Tavily-based web tools for research
-  - `tavily_search()`: Web search with Tavily API
-  - `tavily_extract()`: Extract content from URLs
-  - `tavily_crawl()`: Crawl websites for comprehensive data
-  - `tavily_map()`: Create knowledge maps of topics
-  - `create_dspy_tools()`: Factory for DSPy tool instances
+### Models (`models/`)
+Pydantic models describe agent IO, while DSPy signatures formalize prompts. New `rfp.py` introduces `RFPQuestion`, `RFPSection`, `RFPQuestionSet`, and the supporting signatures for insight extraction, reference gathering, and question generation.
 
 ### Metrics (`metrics/`)
-- **scoring.py**: Vendor quality scoring and evaluation
-  - `contains_phone_number()`: Phone number validation scoring
-  - `contains_contact_email()`: Email validation scoring
-  - `contains_countries_served()`: Geographic coverage scoring
-  - `comprehensive_vendor_score()`: Complete vendor quality assessment
-  - `make_llm_judge_metric()`: LLM-based vendor list evaluation
+`rfp_scoring.py` complements existing vendor and PESTLE metrics with heuristics (question count, section balance, reference coverage, uniqueness) plus an LLM judge factory for RFP evaluations.
 
-- **pestle_scoring.py**: PESTLE analysis quality metrics
-  - `evaluate_pestle_completeness()`: Assess factor coverage completeness
-  - `evaluate_pestle_actionability()`: Score actionability of recommendations
-  - `comprehensive_pestle_score()`: Complete PESTLE quality assessment
-  - `make_pestle_llm_judge_metric()`: LLM-based PESTLE evaluation
+### Data & Tests
+`data/rfp_examples.py` seeds trainsets with realistic payloads. `tests/test_rfp_agent.py` stubs DSPy modules to validate the RFP pipeline without network access and ensures heuristics behave as expected.
 
-### Data (`data/`)
-- **examples.py**: Example data for testing and training
-  - `general_industrial_supplies_example_n15`: Sample vendor list for industrial supplies
+## Complete Pipeline Architecture
 
-## Usage
+The system now includes a comprehensive analysis pipeline that executes in three phases:
 
-### Basic Vendor Discovery
+### Phase 1: Parallel Analysis
+- **Vendor Discovery**: Identifies N vendors in the specified category/region
+- **PESTLE Analysis**: Macro-environmental factors assessment
+- **Porter's Five Forces**: Industry competitiveness analysis
 
-Run vendor discovery with GEPA optimization:
+### Phase 2: SWOT Analysis
+- Analyzes top K vendors from Phase 1
+- Generates detailed SWOT assessments
+- Can run in parallel for multiple vendors
 
+### Phase 3: RFP Generation
+- Synthesizes all previous analyses
+- Generates comprehensive RFP question set
+- Produces categorized, contextual questions
+
+## Quick Start
+
+### Setup
+1. Create a virtual environment (`python -m venv .venv && . .venv/bin/activate` or `.venv\Scripts\Activate.ps1`).
+2. Install dependencies (`pip install -e .` or `pip install -r requirements.txt`).
+3. Export required keys: `OPENAI_API_KEY`, `TAVILY_API_KEY`; optional Langfuse keys add observability.
+
+### Run Complete Pipeline
 ```python
-python main.py
+python main.py  # Runs the complete pipeline with defaults
 ```
 
-The first run optimizes the vendor agent and caches the compiled program to `VENDOR_PROGRAM_PATH` (default `data/artifacts/vendor_program.json`). Subsequent runs reuse that cache unless you delete the file or pass `reuse_cached_program=False` when calling `run()`. Set the `VENDOR_OPTIMIZE_ON_MISS=0` environment variable (or call `run(optimize_if_missing=False)`) to skip GEPA entirely when the cache is absent.
+Or use the test script:
+```python
+python test_complete_pipeline.py  # Detailed pipeline demo with formatted output
+```
 
-### Vendor Discovery with PESTLE Analysis
+## Usage Examples
 
-The `run_with_pestle()` function combines vendor discovery with comprehensive market analysis:
+### Complete Pipeline (Recommended)
 
 ```python
-from main import run_with_pestle
+from main import run_complete_pipeline
 
-result = run_with_pestle(
-    category="General Industrial Supplies",
-    n=15,
-    country_or_region="United States",
-    include_pestle=True
+# Execute full analysis pipeline
+result = run_complete_pipeline(
+    category="Cloud Infrastructure Solutions",
+    n_vendors=15,                    # Number of vendors to discover
+    region="United States",
+    swot_top_n=5,                    # Top vendors for SWOT analysis
+    expected_rfp_questions=100,      # Target RFP question count
+    optimize_if_missing=True,        # Auto-optimize agents if needed
+    reuse_cached_programs=True,      # Use cached optimized programs
 )
 
-# Access vendor list
-vendors = result.vendor_list
-
-# Access PESTLE analysis
-pestle = result.pestle_analysis
-print(pestle.executive_summary)
-print(pestle.opportunities)
-print(pestle.threats)
+# Access results
+print(f"Vendors found: {len(result.vendor_list)}")
+print(f"PESTLE complete: {result.pestle_analysis is not None}")
+print(f"Porter's complete: {result.porters_analysis is not None}")
+print(f"SWOT analyses: {len(result.swot_analyses)}")
+print(f"RFP questions: {result.rfp_question_set.total_questions}")
 ```
 
-### Standalone PESTLE Analysis
-
-Run PESTLE analysis examples:
+### RFP Agent Usage (Isolated)
 
 ```python
-python example_pestle.py
-```
+from agents.rfp_agent import generate_rfp_question_set
 
-Or use the PESTLE agent directly:
-
-```python
-from agents import create_pestle_agent
-
-agent = create_pestle_agent(use_tools=True, max_iters=30)
-result = agent(
-    category="Cloud Computing Services",
-    region="Europe",
-    focus_areas=["legal", "technological", "environmental"]
+rfp_questions = generate_rfp_question_set(
+    category="Industrial IoT Platforms",
+    region="North America",
+    pestle_analysis={"economic": {"key_insights": ["Capex scrutiny"]}},
+    porters_analysis={"competitive_rivalry": "High"},
+    swot_analyses=[{"vendor_name": "Vendor A", "strengths": {"key_insights": ["Edge coverage"]}}],
+    vendor_list=[{"name": "Vendor A"}, {"name": "Vendor B"}],
+    use_tools=False,
 )
-
-pestle = result.pestle_analysis
+print(rfp_questions.total_questions)
+for section in rfp_questions.sections:
+    print(section.name, len(section.questions))
 ```
 
-## Features
-
-### Vendor Discovery
-- Searches for vendors in specified categories
-- Validates contact information (emails, phone numbers)
-- Assesses geographic coverage
-- Uses GEPA optimization for improved results
-
-### PESTLE Analysis
-- **Political**: Government policies, regulations, trade agreements
-- **Economic**: Market size, growth rates, economic indicators
-- **Social**: Consumer trends, demographics, cultural factors
-- **Technological**: Innovation, disruption, digital transformation
-- **Legal**: Compliance requirements, liability issues, contracts
-- **Environmental**: Sustainability, climate impact, green initiatives
-- Provides strategic recommendations, opportunities, and threats
-- Generates executive summaries
-
-## Dependencies
-
-- dspy-ai
-- openai
-- tavily-python
-- httpx
-- beautifulsoup4
-- pydantic
-- python-dotenv
-- openinference-instrumentation-dspy
-- mcp (Model Context Protocol)
-
-## Environment Variables
-
-### Required
-- `OPENAI_API_KEY`: OpenAI API key
-- `TAVILY_API_KEY`: Tavily API key for web search
-
-### Optional
-- `LANGFUSE_PUBLIC_KEY`: Langfuse public key for tracing
-- `LANGFUSE_SECRET_KEY`: Langfuse secret key for tracing
-- `LANGFUSE_HOST`: Langfuse host URL (defaults to US cloud)
-- `VENDOR_PROGRAM_PATH`: Optional path for caching the optimized vendor program (default: `data/artifacts/vendor_program.json`)
-- `VENDOR_OPTIMIZE_ON_MISS`: Set to `0`/`false` to skip GEPA when no cached program exists (defaults to `true`).
-
-### DSPy Configuration
-- `DSPY_MODEL`: Primary model (default: openai/gpt-5-mini)
-- `DSPY_TEMPERATURE`: Temperature setting (default: 1.0)
-- `DSPY_MAX_TOKENS`: Max tokens (default: 100000)
-- `DSPY_REFLECTION_MODEL`: Reflection model for GEPA (default: openai/gpt-5)
-- `DSPY_REFLECTION_TEMPERATURE`: Reflection temperature (default: 1.0)
-- `DSPY_REFLECTION_MAX_TOKENS`: Reflection max tokens (default: 32000)
-
-### GEPA Optimization
-- `GEPA_MAX_METRIC_CALLS`: Number of optimization iterations (default: 60)
-- `GEPA_NUM_THREADS`: Parallel threads for GEPA (default: 3)
-
-### Observability (Langfuse)
-- Provide `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`; set `LANGFUSE_HOST` (for example `https://us.cloud.langfuse.com`) if you use a non-default Langfuse region.
-- `main.run()` and the example scripts invoke `config.setup_langfuse()` automatically; traces are emitted whenever Langfuse credentials are present.
-- To instrument custom code paths, import `setup_langfuse` from `config` or `config.observability` and call it once before configuring DSPy.
-- Langfuse uses OpenTelemetry under the hood, so DSPy spans, Tavily tool calls, and GEPA metrics appear in the Langfuse UI for replay and analytics.
-- Spans capture vendor coverage (emails, phones, geography) and PESTLE insight counts so you can filter runs by data quality inside Langfuse.
-
-### BootstrapFewShot Seed Pipeline
-- Run `python -m optimize.bootstrap_vendor` (or call `optimize.bootstrap_vendor.bootstrap_vendor_agent()` from your own script) to generate synthetic vendor demos when you lack labeled data.
-- Bootstrapped demos are written to `data/artifacts/vendor_bootstrap.jsonl` by default and can seed future GEPA runs.
-- Adjust `max_bootstrapped_demos`, `max_rounds`, or supply custom seed examples to control how many synthetic traces are collected.
-
-
-
+The helper sets up the isolated pipeline; swap `use_tools=True` to enable Tavily-backed reference searches in production environments.

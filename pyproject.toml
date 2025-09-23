@@ -11,4 +11,5 @@ dependencies = [
     "openinference-instrumentation-dspy>=0.1.29",
     "python-dotenv>=1.1.1",
     "tavily-python>=0.7.12",
+    "textual>=6.1.0",
 ]

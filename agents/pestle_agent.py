@@ -2,6 +2,7 @@
 
 import logging
 from typing import List, Optional
+
 import dspy
 from dspy import Example
 
@@ -47,7 +48,16 @@ def create_pestle_agent(use_tools: bool = True, max_iters: int = 30, use_refine:
 
     # Optionally wrap with Refine for iterative improvement
     if use_refine:
-        agent = dspy.Refine(agent, max_iterations=3)
+        def _reward_fn(_: dict, prediction) -> float:
+            analysis = getattr(prediction, "pestle_analysis", None)
+            return 1.0 if isinstance(analysis, PESTLEAnalysis) else 0.0
+
+        agent = dspy.Refine(
+            module=agent,
+            N=3,
+            reward_fn=_reward_fn,
+            threshold=0.9,
+        )
         logger.info("Wrapped agent with Refine module for iterative improvement")
 
     return agent
@@ -156,6 +166,7 @@ def optimize_pestle_agent(
     metric: callable,
     trainset: List[Example],
     optimizer_class: type = dspy.GEPA,
+    reflection_lm: Optional[dspy.LM] = None,
     **optimizer_kwargs
 ) -> dspy.Module:
     """
@@ -182,8 +193,19 @@ def optimize_pestle_agent(
     # Default GEPA settings
     default_kwargs = {
         "max_metric_calls": 60,
-        "num_threads": 3
+        "num_threads": 3,
     }
+
+    reflection_lm = optimizer_kwargs.pop("reflection_lm", reflection_lm)
+    if reflection_lm is None:
+        reflection_lm = getattr(dspy.settings, "lm", None)
+    if reflection_lm is None:
+        raise ValueError(
+            "optimize_pestle_agent requires a reflection language model. "
+            "Configure dspy.settings.lm or pass reflection_lm explicitly."
+        )
+
+    default_kwargs["reflection_lm"] = reflection_lm
     default_kwargs.update(optimizer_kwargs)
 
     # Create optimizer

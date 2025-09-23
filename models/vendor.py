@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, HttpUrl
 import dspy
 
 
+
 class ContactEmail(BaseModel):
     """Model for vendor contact email information."""
     email: str = Field(..., description="The email address")
@@ -26,6 +27,7 @@ class Vendor(BaseModel):
     contact_emails: List[ContactEmail] = Field(default=..., description="A list of contact email addresses for the vendor")
     phone_numbers: List[PhoneNumber] = Field(default=..., description="A list of contact phone numbers for the vendor")
     countries_served: Optional[List[str]] = Field(default=None, description="A list of countries where the vendor operates")
+
 
 
 class VendorSearchResult(dspy.Signature):

@@ -3,6 +3,7 @@
 from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 import dspy
+from models.citation import Citation
 
 
 class PoliticalFactors(BaseModel):
@@ -195,6 +196,10 @@ class PESTLEAnalysis(BaseModel):
         ...,
         description="Executive summary of the PESTLE analysis"
     )
+    citations: List[Citation] = Field(
+        default_factory=list,
+        description="Evidence sources referenced throughout the analysis"
+    )
 
 
 class PESTLEMarketAnalysis(dspy.Signature):
@@ -213,6 +218,9 @@ class PESTLEMarketAnalysis(dspy.Signature):
 
     Provide actionable insights, strategic recommendations, and identify key
     opportunities and threats based on your analysis.
+
+    IMPORTANT: Include Citation objects from your research in the citations field.
+    Each key insight should be supported by source evidence.
     """
 
     category: str = dspy.InputField(
