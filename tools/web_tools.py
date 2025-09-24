@@ -127,7 +127,7 @@ def tavily_search(query: str, max_results: int = 20, return_citations: bool = Fa
 def tavily_extract(urls, return_citations: bool = False):
     """
     Extract full text / metadata from one or more URLs via Tavily Extract API.
-    Results are truncated to 50,000 characters per URL.
+    Results are truncated to 200,000 characters per URL.
 
     Parameters
     ----------
@@ -140,16 +140,20 @@ def tavily_extract(urls, return_citations: bool = False):
     -------
     dict or tuple[dict, list[Citation]]
         Mapping ``url`` -> extraction result from Tavily.
-        Each result's content is truncated to 50,000 characters.
+        Each result's content is truncated to 200,000 characters.
         If return_citations is True, also returns Citation objects.
     """
     url_list = _ensure_url_list(urls)
     if len(url_list) > 3:
-        logger.warning(
-            "tavily_extract received %d URLs; truncating to the first 3",
-            len(url_list),
+        raise ValueError(
+            f"❌ tavily_extract received {len(url_list)} URLs, but the maximum is 3 per call.\n\n"
+            f"💡 RECOMMENDATION: Are you sure you need to extract the full content of that many pages? "
+            f"Typically only a few pages are needed. The tool allows a maximum of 3 URLs per call. "
+            f"Try extracting 1-3 most relevant pages first, review the content, then decide if more are needed.\n\n"
+            f"📋 You provided: {url_list}\n"
+            f"✅ SOLUTION: Call tavily_extract with only the first 3 URLs, or better yet, "
+            f"prioritize and select the most relevant ones."
         )
-        url_list = url_list[:3]
     if not url_list:
         if return_citations:
             return {"results": []}, []
@@ -159,7 +163,7 @@ def tavily_extract(urls, return_citations: bool = False):
         tav = TavilyClient(api_key=TAVILY_API_KEY)
         resp = tav.extract(urls=url_list)
 
-        # Truncate content for each URL result to 50,000 characters
+        # Truncate content for each URL result to 200,000 characters
         if isinstance(resp, dict):
             results = resp.get("results")
             if isinstance(results, list):
@@ -167,10 +171,10 @@ def tavily_extract(urls, return_citations: bool = False):
                     if isinstance(item, dict):
                         # Truncate raw_content if present
                         if "raw_content" in item and item["raw_content"]:
-                            item["raw_content"] = item["raw_content"][:50000]
+                            item["raw_content"] = item["raw_content"][:200000]
                         # Truncate content if present
                         if "content" in item and item["content"]:
-                            item["content"] = item["content"][:50000]
+                            item["content"] = item["content"][:200000]
 
         if return_citations:
             citations = []
@@ -246,6 +250,18 @@ def _tool_tavily_extract(urls):
     url_list = _ensure_url_list(urls)
     if not url_list:
         return {"results": []}
+
+    # Check URL count limit BEFORE checking budget
+    if len(url_list) > 3:
+        raise ValueError(
+            f"❌ tavily_extract received {len(url_list)} URLs, but the maximum is 3 per call.\n\n"
+            f"💡 RECOMMENDATION: Are you sure you need to extract the full content of that many pages? "
+            f"Typically only a few pages are needed. The tool allows a maximum of 3 URLs per call. "
+            f"Try extracting 1-3 most relevant pages first, review the content, then decide if more are needed.\n\n"
+            f"📋 You provided: {url_list}\n"
+            f"✅ SOLUTION: Call tavily_extract with only the first 3 URLs, or better yet, "
+            f"prioritize and select the most relevant ones."
+        )
 
     global _extract_call_count
     if _extract_call_count >= _MAX_EXTRACT_CALLS:

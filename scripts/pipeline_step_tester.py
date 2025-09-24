@@ -6,8 +6,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 from pathlib import Path
-from textwrap import dedent
-from typing import Iterable, List, Optional
+from typing import List
 
 import dspy
 from dotenv import load_dotenv
@@ -23,6 +22,11 @@ from agents.pestle_agent import create_pestle_agent
 from agents.porters_agent import create_porters_agent
 from agents.swot_agent import create_swot_agent, analyze_vendor_swot
 from agents.rfp_agent import create_rfp_agent
+from tools.markdown_tools import (
+    output_report,
+    ReportGenerator,
+    save_report
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -113,203 +117,6 @@ def configure_primary_lm() -> None:
     )
 
 
-def write_markdown(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-
-
-def sanitize_markdown(text: str | None) -> str:
-    if not text:
-        return "—"
-    return text.replace("|", "\\|").strip()
-
-
-def vendor_markdown(category: str, region: str | None, vendors: List) -> str:
-    rows = [
-        "| # | Vendor | Website | Contact Email | Phone | Countries | Justification |",
-        "|---|--------|---------|----------------|-------|-----------|---------------|",
-    ]
-    for index, vendor in enumerate(vendors, start=1):
-        name = getattr(vendor, "name", "Unknown")
-        website = getattr(vendor, "website", "N/A")
-        emails = getattr(vendor, "contact_emails", []) or []
-        email = '-'
-        if emails:
-            email_obj = emails[0]
-            address = getattr(email_obj, 'email', '') or ''
-            label = getattr(email_obj, 'description', '') or ''
-            email = f"{address} ({label})" if label else address or '-'
-        email = sanitize_markdown(email)
-        phones = getattr(vendor, "phone_numbers", []) or []
-        phone = '-'
-        if phones:
-            phone_obj = phones[0]
-            number = getattr(phone_obj, 'number', '') or ''
-            label = getattr(phone_obj, 'description', '') or ''
-            phone = f"{number} ({label})" if label else number or '-'
-        phone = sanitize_markdown(phone)
-        countries = getattr(vendor, "countries_served", []) or []
-        countries_text = ", ".join(countries) if countries else "—"
-        justification = sanitize_markdown(getattr(vendor, "justification", ""))
-        rows.append(
-            f"| {index} | {name} | {website} | {email} | {phone} | {countries_text} | {justification} |"
-        )
-
-    body = "\n".join(rows) if vendors else "No vendors returned."
-    return dedent(
-        f"""
-        # Step 1 · Vendor Discovery
-
-        - Category: {category}
-        - Region: {region or 'Global'}
-        - Vendors returned: {len(vendors)}
-
-        {body}
-        """
-    ).strip() + "\n"
-
-
-def pestle_markdown(analysis) -> str:
-    summary = sanitize_markdown(getattr(analysis, "executive_summary", ""))
-
-    def list_section(title: str, items: Iterable[str]) -> str:
-        cleaned = [f"- {sanitize_markdown(item)}" for item in items if item]
-        if not cleaned:
-            cleaned = ["- —"]
-        section = "\n".join(cleaned)
-        return f"## {title}\n\n{section}\n"
-
-    sections = []
-    for pillar in [
-        "political",
-        "economic",
-        "social",
-        "technological",
-        "legal",
-        "environmental",
-    ]:
-        pillar_obj = getattr(analysis, pillar, None)
-        insights = getattr(pillar_obj, "key_insights", []) if pillar_obj else []
-        title = f"{pillar.title()} Insights"
-        sections.append(list_section(title, insights))
-
-    opportunities = list_section("Opportunities", getattr(analysis, "opportunities", []))
-    threats = list_section("Threats", getattr(analysis, "threats", []))
-
-    return dedent(
-        f"""
-        # Step 2 · PESTLE Analysis
-
-        - Region analysed: {sanitize_markdown(getattr(analysis, 'region', 'Global'))}
-        - Recommendations: {len(getattr(analysis, 'strategic_recommendations', []) or [])}
-
-        ## Executive Summary
-
-        {summary or '—'}
-
-        {opportunities}
-        {threats}
-        {''.join(sections)}
-        """
-    ).strip() + "\n"
-
-
-def porters_markdown(analysis) -> str:
-    def summarise_force(title: str, force_obj) -> str:
-        if not force_obj:
-            return f"### {title}\n\n—\n"
-        insights = getattr(force_obj, "key_insights", []) or []
-        bullets = "\n".join(f"- {sanitize_markdown(item)}" for item in insights) or "- —"
-        return f"### {title}\n\n{bullets}\n"
-
-    sections = [
-        summarise_force("Threat of New Entrants", getattr(analysis, "threat_of_new_entrants", None)),
-        summarise_force("Bargaining Power · Suppliers", getattr(analysis, "bargaining_power_suppliers", None)),
-        summarise_force("Bargaining Power · Buyers", getattr(analysis, "bargaining_power_buyers", None)),
-        summarise_force("Threat of Substitutes", getattr(analysis, "threat_of_substitutes", None)),
-        summarise_force("Competitive Rivalry", getattr(analysis, "competitive_rivalry", None)),
-    ]
-
-    recommendations = getattr(analysis, "strategic_recommendations", []) or []
-    recommendation_lines = "\n".join(
-        f"- {sanitize_markdown(rec)}" for rec in recommendations
-    ) or "- —"
-
-    return dedent(
-        f"""
-        # Step 3 · Porter's Five Forces
-
-        - Industry attractiveness: {sanitize_markdown(getattr(analysis, 'industry_attractiveness', 'Unknown'))}
-        - Opportunities highlighted: {len(getattr(analysis, 'opportunities', []) or [])}
-        - Threats highlighted: {len(getattr(analysis, 'threats', []) or [])}
-
-        ## Strategic Recommendations
-
-        {recommendation_lines}
-
-        {''.join(sections)}
-        """
-    ).strip() + "\n"
-
-
-def swot_markdown(swot_list: List) -> str:
-    rows = [
-        "| Vendor | Strengths | Weaknesses | Opportunities | Threats | Recommendations |",
-        "|--------|-----------|------------|---------------|---------|----------------|",
-    ]
-    for swot in swot_list:
-        if swot is None:
-            continue
-        name = getattr(swot, "vendor_name", "Unknown")
-        strengths = len(getattr(getattr(swot, "strengths", None), "competitive_advantages", []) or [])
-        weaknesses = len(getattr(getattr(swot, "weaknesses", None), "limitations", []) or [])
-        opps = len(getattr(getattr(swot, "opportunities", None), "market_opportunities", []) or [])
-        threats = len(getattr(getattr(swot, "threats", None), "competitive_threats", []) or [])
-        recs = len(getattr(swot, "strategic_recommendations", []) or [])
-        rows.append(
-            f"| {sanitize_markdown(name)} | {strengths} | {weaknesses} | {opps} | {threats} | {recs} |"
-        )
-
-    body = "\n".join(rows) if swot_list else "No SWOT analyses produced."
-    return dedent(
-        f"""
-        # Step 4 · SWOT Analyses
-
-        - Vendors analysed: {len([s for s in swot_list if s is not None])}
-
-        {body}
-        """
-    ).strip() + "\n"
-
-
-def rfp_markdown(question_set) -> str:
-    sections = []
-    for section in getattr(question_set, "sections", []) or []:
-        first_question = section.questions[0].question if section.questions else "—"
-        sections.append(
-            dedent(
-                f"""
-                ### {sanitize_markdown(section.title)}
-
-                - Questions: {len(section.questions)}
-                - Sample: {sanitize_markdown(first_question)}
-                """
-            ).strip()
-        )
-
-    section_text = "\n\n".join(sections) if sections else "No sections returned."
-    return dedent(
-        f"""
-        # Step 5 · RFP Generation
-
-        - Total questions: {getattr(question_set, 'total_questions', 0)}
-        - Sections: {len(getattr(question_set, 'sections', []) or [])}
-
-        {section_text}
-        """
-    ).strip() + "\n"
-
-
 def main() -> None:
     load_dotenv()
     args = parse_args()
@@ -323,8 +130,11 @@ def main() -> None:
     output_dir = Path(args.output_dir) / timestamp
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # STEP 1 — Vendor discovery using the vendor agent.
+    # Create the report generator that will be used throughout
     configure_primary_lm()
+    report_generator = ReportGenerator()
+
+    # STEP 1 — Vendor discovery using the vendor agent.
     vendor_program_path = get_vendor_program_path()
     vendor_agent = load_vendor_agent(
         path=vendor_program_path,
@@ -345,9 +155,12 @@ def main() -> None:
     vendor_list = list(getattr(vendor_prediction, "vendor_list", []) or [])
     if not vendor_list:
         raise RuntimeError("Vendor agent did not return any vendors")
-    vendor_path = output_dir / "step1_vendor_discovery.md"
-    write_markdown(vendor_path, vendor_markdown(args.category, args.region, vendor_list))
-    print(f"[STEP 1] Vendor discovery complete  {vendor_path}")
+
+    # Generate and save vendor report immediately
+    vendor_markdown = report_generator.generate_vendor_report(vendor_list, args.category, args.region)
+    vendor_file = save_report(vendor_markdown, str(output_dir / "01_vendor_discovery.md"))
+    print(f"[STEP 1] Vendor discovery complete - {len(vendor_list)} vendors found")
+    print(f"         Report saved to: {vendor_file}")
 
     # STEP 2 — PESTLE analysis using live tools.
     configure_primary_lm()
@@ -360,9 +173,12 @@ def main() -> None:
     pestle_analysis = getattr(pestle_prediction, "pestle_analysis", None)
     if pestle_analysis is None:
         raise RuntimeError("PESTLE agent did not return an analysis")
-    pestle_path = output_dir / "step2_pestle.md"
-    write_markdown(pestle_path, pestle_markdown(pestle_analysis))
-    print(f"[STEP 2] PESTLE analysis complete → {pestle_path}")
+
+    # Generate and save PESTLE report immediately
+    pestle_markdown = report_generator.generate_pestle_report(pestle_analysis, args.category, args.region)
+    pestle_file = save_report(pestle_markdown, str(output_dir / "02_pestle_analysis.md"))
+    print(f"[STEP 2] PESTLE analysis complete")
+    print(f"         Report saved to: {pestle_file}")
 
     # STEP 3 — Porter's Five Forces analysis.
     configure_primary_lm()
@@ -375,9 +191,12 @@ def main() -> None:
     porters_analysis = getattr(porters_prediction, "porters_analysis", None)
     if porters_analysis is None:
         raise RuntimeError("Porter's agent did not return an analysis")
-    porters_path = output_dir / "step3_porters.md"
-    write_markdown(porters_path, porters_markdown(porters_analysis))
-    print(f"[STEP 3] Porter's Five Forces complete → {porters_path}")
+
+    # Generate and save Porter's report immediately
+    porters_markdown = report_generator.generate_porters_report(porters_analysis, args.category, args.region)
+    porters_file = save_report(porters_markdown, str(output_dir / "03_porters_analysis.md"))
+    print(f"[STEP 3] Porter's Five Forces complete")
+    print(f"         Report saved to: {porters_file}")
 
     # STEP 4 — SWOT across selected vendors.
     configure_primary_lm()
@@ -395,9 +214,12 @@ def main() -> None:
             use_cache=False,
         )
         swot_analyses.append(swot)
-    swot_path = output_dir / "step4_swot.md"
-    write_markdown(swot_path, swot_markdown(swot_analyses))
-    print(f"[STEP 4] SWOT analyses complete → {swot_path}")
+
+    # Generate and save SWOT report immediately
+    swot_markdown = report_generator.generate_swot_report(swot_analyses, args.category, args.region)
+    swot_file = save_report(swot_markdown, str(output_dir / "04_swot_analyses.md"))
+    print(f"[STEP 4] SWOT analyses complete - {len(swot_analyses)} vendors analyzed")
+    print(f"         Report saved to: {swot_file}")
 
     # STEP 5 — RFP generation using preceding outputs.
     configure_primary_lm()
@@ -427,11 +249,51 @@ def main() -> None:
     rfp_question_set = getattr(rfp_prediction, "question_set", None)
     if rfp_question_set is None:
         raise RuntimeError("RFP agent did not return a question set")
-    rfp_path = output_dir / "step5_rfp.md"
-    write_markdown(rfp_path, rfp_markdown(rfp_question_set))
-    print(f"[STEP 5] RFP generation complete → {rfp_path}")
+
+    # Generate and save RFP report immediately
+    rfp_markdown = report_generator.generate_rfp_report(rfp_question_set, args.category, args.region)
+    rfp_file = save_report(rfp_markdown, str(output_dir / "05_rfp_questions.md"))
+    print(f"[STEP 5] RFP generation complete - {rfp_question_set.total_questions} questions generated")
+    print(f"         Report saved to: {rfp_file}")
+
+    # Now generate the combined report from all the individual reports
+    print(f"\nGenerating combined analysis report...")
+
+    # Read back the individual reports we just saved
+    with open(vendor_file, 'r', encoding='utf-8') as f:
+        vendor_content = f.read()
+    with open(pestle_file, 'r', encoding='utf-8') as f:
+        pestle_content = f.read()
+    with open(porters_file, 'r', encoding='utf-8') as f:
+        porters_content = f.read()
+    with open(swot_file, 'r', encoding='utf-8') as f:
+        swot_content = f.read()
+    with open(rfp_file, 'r', encoding='utf-8') as f:
+        rfp_content = f.read()
+
+    # Generate the combined report
+    combined_markdown = report_generator.generate_combined_report(
+        category=args.category,
+        region=args.region,
+        vendor_report=vendor_content,
+        pestle_report=pestle_content,
+        porters_report=porters_content,
+        swot_report=swot_content,
+        rfp_report=rfp_content
+    )
+
+    complete_file = save_report(combined_markdown, str(output_dir / "COMPLETE_ANALYSIS_REPORT.md"))
+
+    print(f"\n✅ All reports generated successfully!")
+    print(f"\n📁 Output directory: {output_dir}")
+    print(f"\n📄 Individual reports:")
+    print(f"  - Vendor Discovery: {Path(vendor_file).name}")
+    print(f"  - PESTLE Analysis: {Path(pestle_file).name}")
+    print(f"  - Porter's Five Forces: {Path(porters_file).name}")
+    print(f"  - SWOT Analyses: {Path(swot_file).name}")
+    print(f"  - RFP Questions: {Path(rfp_file).name}")
+    print(f"\n📑 Combined report: {Path(complete_file).name}")
 
 
 if __name__ == "__main__":
     main()
-
