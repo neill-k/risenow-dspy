@@ -3,6 +3,7 @@
 from .environment import (
     OPENAI_API_KEY,
     TAVILY_API_KEY,
+    TAVILY_MAX_EXTRACT_CALLS,
     get_langfuse_host,
     get_vendor_program_path,
     is_langfuse_configured,
@@ -19,6 +20,7 @@ from .observability import (
 __all__ = [
     "OPENAI_API_KEY",
     "TAVILY_API_KEY",
+    "TAVILY_MAX_EXTRACT_CALLS",
     "validate_environment",
     "is_langfuse_configured",
     "get_langfuse_host",

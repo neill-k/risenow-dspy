@@ -78,7 +78,7 @@ The system now includes a comprehensive analysis pipeline that executes in three
 ### Setup
 1. Create a virtual environment (`python -m venv .venv && . .venv/bin/activate` or `.venv\Scripts\Activate.ps1`).
 2. Install dependencies (`pip install -e .` or `pip install -r requirements.txt`).
-3. Export required keys: `OPENAI_API_KEY`, `TAVILY_API_KEY`; optional Langfuse keys add observability.
+3. Export required keys: `OPENAI_API_KEY`, `TAVILY_API_KEY`; optional Langfuse keys add observability. Set `TAVILY_MAX_EXTRACT_CALLS` to tune the Tavily extract budget (default 24).
 
 ### Run Complete Pipeline
 ```python

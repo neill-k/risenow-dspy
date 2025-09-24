@@ -18,6 +18,7 @@ def _get_bool_env(var_name: str, default: bool) -> bool:
 # Environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+TAVILY_MAX_EXTRACT_CALLS = max(0, int(os.getenv("TAVILY_MAX_EXTRACT_CALLS", "24")))
 
 LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY")
 LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY")

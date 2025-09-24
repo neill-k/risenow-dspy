@@ -8,14 +8,34 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from tavily import TavilyClient
 import dspy
-from config.environment import TAVILY_API_KEY
+from config.environment import TAVILY_API_KEY, TAVILY_MAX_EXTRACT_CALLS
 from models.citation import Citation
 
 
 logger = logging.getLogger(__name__)
 
-_MAX_EXTRACT_CALLS = 24
 _extract_call_count = 0
+
+
+def _get_extract_warning_threshold(limit: int) -> int:
+    """Return remaining-call threshold at which we should warn the agent."""
+    if limit <= 0:
+        return 0
+    return min(3, max(1, limit // 5))
+
+
+def _format_extract_warning(remaining: int, limit: int) -> str:
+    """Return a human-friendly warning about remaining extract calls."""
+    if remaining <= 0:
+        return (
+            f"⚠️ tavily_extract budget exhausted: no calls remaining out of {limit}. "
+            "Further tavily_extract usage will raise an error."
+        )
+
+    return (
+        f"⚠️ tavily_extract budget nearly exhausted: {remaining} call(s) remaining out of {limit}. "
+        "Prefer tavily_search snippets or cache results before extracting again."
+    )
 
 
 def _normalize_url(url: str) -> str:
@@ -125,9 +145,11 @@ def tavily_search(query: str, max_results: int = 20, return_citations: bool = Fa
 
 
 def tavily_extract(urls, return_citations: bool = False):
-    """
+    f"""
     Extract full text / metadata from one or more URLs via Tavily Extract API.
     Results are truncated to 200,000 characters per URL.
+    This tool is limited to {TAVILY_MAX_EXTRACT_CALLS} calls per process; adjust
+    ``TAVILY_MAX_EXTRACT_CALLS`` in your environment to raise or lower the cap.
 
     Parameters
     ----------
@@ -264,16 +286,41 @@ def _tool_tavily_extract(urls):
         )
 
     global _extract_call_count
-    if _extract_call_count >= _MAX_EXTRACT_CALLS:
-        logger.warning("tavily_extract budget exhausted")
-        return {
-            "error": "tavily_extract budget exhausted",
-            "urls": url_list,
-        }
+    limit = TAVILY_MAX_EXTRACT_CALLS
+    if limit <= 0:
+        message = (
+            "❌ tavily_extract is disabled because TAVILY_MAX_EXTRACT_CALLS is set to 0.\n\n"
+            "💡 RECOMMENDATION: Increase TAVILY_MAX_EXTRACT_CALLS in your environment or rely on tavily_search snippets."
+        )
+        logger.error(message)
+        raise RuntimeError(message)
+
+    if _extract_call_count >= limit:
+        message = (
+            f"❌ tavily_extract budget exhausted. Limit of {limit} calls reached for this run.\n\n"
+            "💡 RECOMMENDATION: Reduce extract usage, cache prior results, or increase TAVILY_MAX_EXTRACT_CALLS."
+        )
+        logger.error(message)
+        raise RuntimeError(message)
+
+    threshold = _get_extract_warning_threshold(limit)
+    remaining_before_call = limit - _extract_call_count
+    if threshold and remaining_before_call <= threshold:
+        logger.warning(_format_extract_warning(remaining_before_call, limit))
 
     arg = urls if isinstance(urls, str) else url_list
     response = tavily_extract(arg)
     _extract_call_count += 1
+    remaining_after_call = max(limit - _extract_call_count, 0)
+    if threshold and remaining_after_call <= threshold:
+        warning_message = _format_extract_warning(remaining_after_call, limit)
+        logger.warning(warning_message)
+        if isinstance(response, dict):
+            warnings = response.setdefault("warnings", [])
+            if isinstance(warnings, list):
+                warnings.append(warning_message)
+            else:
+                response["warnings"] = [warning_message]
     return response
 
 
@@ -305,7 +352,11 @@ def create_dspy_tools():
     extract_tool = dspy.Tool(
         _tool_tavily_extract,
         name="tavily_extract",
-        desc="Extract page content (budgeted). Use sparingly. tavily_search provides text snippets. only use this when search does not provide what you need. Args: urls:list[str]|str -> dict",
+        desc=(
+            f"Extract page content (budgeted, limit {TAVILY_MAX_EXTRACT_CALLS} calls). "
+            "Use sparingly. tavily_search provides text snippets. only use this when search does not provide what you need. "
+            "Args: urls:list[str]|str -> dict"
+        ),
     )
     crawl_tool = dspy.Tool(
         _tool_tavily_crawl,
