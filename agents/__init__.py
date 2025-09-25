@@ -13,6 +13,11 @@ from .vendor_agent import (
     load_vendor_agent,
     save_vendor_agent,
 )
+from .vendor_contact_agent import (
+    create_vendor_contact_agent,
+    create_vendor_contact_tool,
+    lookup_vendor_contacts,
+)
 from .rfp_agent import (
     create_rfp_agent,
     create_rfp_metric,
@@ -31,6 +36,9 @@ __all__ = [
     "optimize_vendor_agent",
     "load_vendor_agent",
     "save_vendor_agent",
+    "create_vendor_contact_agent",
+    "create_vendor_contact_tool",
+    "lookup_vendor_contacts",
     "create_rfp_agent",
     "create_rfp_metric",
     "create_rfp_trainset",

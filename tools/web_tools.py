@@ -434,15 +434,14 @@ def _tool_tavily_extract(urls):
         return {"results": []}
 
     # Check URL count limit BEFORE checking budget
-    if len(url_list) > 3:
+    if len(url_list) > 2:
         raise ValueError(
-            f"❌ tavily_extract received {len(url_list)} URLs, but the maximum is 3 per call.\n\n"
+            f"❌ tavily_extract received {len(url_list)} URLs, but the maximum is 2 per call.\n\n"
             f"💡 RECOMMENDATION: Are you sure you need to extract the full content of that many pages? "
-            f"Typically only a few pages are needed. The tool allows a maximum of 3 URLs per call. "
-            f"Try extracting 1-3 most relevant pages first, review the content, then decide if more are needed.\n\n"
+            f"Typically only a few pages are needed. The tool allows a maximum of 2 URLs per call. "
+            f"Try extracting 1-2 most relevant pages first, review the content, then decide if more are needed.\n\n"
             f"📋 You provided: {url_list}\n"
-            f"✅ SOLUTION: Call tavily_extract with only the first 3 URLs, or better yet, "
-            f"prioritize and select the most relevant ones."
+            f"✅ SOLUTION: Call tavily_extract with only the first 2 URLs and prioritize the most relevant ones."
         )
 
     limit = _extract_limit_var.get()
@@ -471,8 +470,8 @@ def _tool_tavily_extract(urls):
     arg = urls if isinstance(urls, str) else url_list
     if TOOL_UI_LOG:
         try:
-            preview = url_list[:3]
-            ellipsis = "" if len(url_list) <= 3 else " …"
+            preview = url_list[:2]
+            ellipsis = "" if len(url_list) <= 2 else " …"
             TOOL_UI_LOG(f"📄 Extracting page(s): {preview}{ellipsis}")
         except Exception:
             pass
@@ -538,3 +537,10 @@ def create_dspy_tools():
         desc="Generate site map. DO NOT USE unless necessary. Args: url:str, max_results:int=10 -> dict",
     )
     return search_tool, extract_tool, crawl_tool, map_tool
+
+
+def create_contact_lookup_tools():
+    """Return the subset of Tavily tools needed for contact discovery."""
+
+    search_tool, extract_tool, *_ = create_dspy_tools()
+    return search_tool, extract_tool

@@ -12,6 +12,7 @@ from dspy import Example, Prediction
 from models.vendor import VendorSearchResult
 from metrics.scoring import make_llm_judge_metric
 from tools.web_tools import create_dspy_tools
+from .vendor_contact_agent import create_vendor_contact_tool
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,6 @@ def create_vendor_agent(max_iters: int = 50) -> dspy.Module:
 
     Parameters
     ----------
-    use_tools : bool
-        Whether to enable Tavily research tools via ReAct.
     max_iters : int
         Maximum number of reasoning/tool iterations.
 
@@ -44,13 +43,16 @@ def create_vendor_agent(max_iters: int = 50) -> dspy.Module:
         Configured DSPy module for vendor discovery.
     """
 
-    tools = create_dspy_tools()
+    base_tools = list(create_dspy_tools())
+    contact_tool = create_vendor_contact_tool()
+    toolset = base_tools + [contact_tool]
+
     agent = dspy.ReAct(
         VendorSearchResult,
-        tools=list(tools),
+        tools=toolset,
         max_iters=max_iters,
     )
-    logger.info("Created vendor ReAct agent with %s tools", len(tools))
+    logger.info("Created vendor ReAct agent with %s tools", len(toolset))
     return agent
 
 
