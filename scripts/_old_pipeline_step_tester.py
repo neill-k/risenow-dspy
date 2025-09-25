@@ -6,17 +6,16 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 from pathlib import Path
-from typing import List
 
 import dspy
 from dotenv import load_dotenv
 
 from config.environment import (
     validate_environment,
-    get_primary_lm_config,
     get_vendor_program_path,
 )
 from config.observability import setup_langfuse, generate_session_id
+from config.lm import configure_primary_lm
 from agents.vendor_agent import create_vendor_agent, load_vendor_agent
 from agents.pestle_agent import create_pestle_agent
 from agents.porters_agent import create_porters_agent
@@ -27,6 +26,7 @@ from tools.markdown_tools import (
     ReportGenerator,
     save_report
 )
+from utils.source_logger import reset_source_logger, get_source_logger
 
 
 def parse_args() -> argparse.Namespace:
@@ -96,54 +96,40 @@ def parse_args() -> argparse.Namespace:
         default=90,
         help="Max ReAct iterations for the RFP generator.",
     )
+    parser.add_argument(
+        "--disable-cache",
+        action="store_true",
+        help="Disable DSPy LM caching so every step makes fresh LLM calls.",
+    )
     return parser.parse_args()
 
-
-def configure_primary_lm() -> None:
-    """Instantiate and register the primary LM with DSPy."""
-    primary_config = get_primary_lm_config()
-    # DSPy automatically uses exponential_backoff_retry strategy with LiteLLM
-    # num_retries is now configured via environment.py
-    primary_lm = dspy.LM(**primary_config)
-    dspy.configure(lm=primary_lm)
-
-    # Truncate long-running ReAct agent trajectories to prevent context window overflow
-    dspy.settings.configure(
-        rm=None,  # No retriever model used in this pipeline
-        max_bootstrapped_demos=3,  # Max examples retrieved by RMs in training
-        max_discussion_tokens=250000,  # Max tokens for ReAct agent trajectory (per step)
-        max_thought_tokens=4000,  # Max tokens for a single 'thought' step
-        max_steps=None,  # Not necessary since max_iters is set on agent
-    )
-
-
 def main() -> None:
-    load_dotenv()
+    load_dotenv(override=True)
     args = parse_args()
-
     validate_environment()
     setup_langfuse()
 
     session_id = generate_session_id()
 
+    # Initialize source logger for this session
+    reset_source_logger(session_id)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = Path(args.output_dir) / timestamp
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create the report generator that will be used throughout
+    # Create the report generator with session ID for citation matching
     configure_primary_lm()
-    report_generator = ReportGenerator()
+    report_generator = ReportGenerator(session_id=session_id)
 
     # STEP 1 — Vendor discovery using the vendor agent.
     vendor_program_path = get_vendor_program_path()
     vendor_agent = load_vendor_agent(
         path=vendor_program_path,
-        use_tools=True,
         max_iters=args.max_vendor_iters,
     )
     if vendor_agent is None:
         vendor_agent = create_vendor_agent(
-            use_tools=True,
             max_iters=args.max_vendor_iters,
         )
 
@@ -211,7 +197,6 @@ def main() -> None:
             category=args.category,
             region=args.region,
             agent=swot_agent,
-            use_cache=False,
         )
         swot_analyses.append(swot)
 
@@ -293,6 +278,16 @@ def main() -> None:
     print(f"  - SWOT Analyses: {Path(swot_file).name}")
     print(f"  - RFP Questions: {Path(rfp_file).name}")
     print(f"\n📑 Combined report: {Path(complete_file).name}")
+
+    # Report on sources collected for citations
+    source_logger = get_source_logger()
+    manifest = source_logger.get_session_manifest()
+    print(f"\n📚 Citation Sources:")
+    print(f"  - Session ID: {manifest['session_id']}")
+    print(f"  - Total sources logged: {manifest['total_sources']}")
+    print(f"  - Source files: {len(manifest['files'])}")
+    for file_name, count in manifest['files'].items():
+        print(f"    • {file_name}: {count} sources")
 
 
 if __name__ == "__main__":

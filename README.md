@@ -105,7 +105,7 @@ result = run_complete_pipeline(
     swot_top_n=5,                    # Top vendors for SWOT analysis
     expected_rfp_questions=100,      # Target RFP question count
     optimize_if_missing=True,        # Auto-optimize agents if needed
-    reuse_cached_programs=True,      # Use cached optimized programs
+    reuse_cached_programs=True,      # Only reuses GEPA-optimized programs saved on disk
 )
 
 # Access results

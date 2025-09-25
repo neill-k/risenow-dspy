@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
-import json
 import asyncio
 
 import dspy
@@ -16,7 +14,7 @@ from dspy import Example, Prediction
 from models.swot import SWOTAnalysis, VendorSWOTAnalysis
 from models.vendor import Vendor
 from metrics.swot_scoring import make_swot_llm_judge_metric
-from tools.web_tools import create_dspy_tools
+from tools.web_tools import create_dspy_tools, scoped_tavily_extract_budget
 from config.observability import observability_span, set_span_attributes
 
 logger = logging.getLogger(__name__)
@@ -122,8 +120,6 @@ def analyze_vendor_swot(
     region: Optional[str] = None,
     competitors: Optional[List[str]] = None,
     agent: Optional[dspy.Module] = None,
-    use_cache: bool = True,
-    cache_dir: str = "data/artifacts/swot_cache"
 ) -> SWOTAnalysis:
     """
     Analyze a single vendor's SWOT.
@@ -140,11 +136,6 @@ def analyze_vendor_swot(
         List of competitor names for comparative analysis
     agent : dspy.Module, optional
         Pre-configured agent (creates new if None)
-    use_cache : bool
-        Whether to use cached results
-    cache_dir : str
-        Directory for caching SWOT analyses
-
     Returns
     -------
     SWOTAnalysis
@@ -159,13 +150,6 @@ def analyze_vendor_swot(
         vendor_name = vendor.name
         vendor_website = vendor.website
         vendor_description = vendor.description
-
-    # Check cache if enabled
-    if use_cache:
-        cached = _load_cached_swot(vendor_website, cache_dir)
-        if cached:
-            logger.info(f"Using cached SWOT for {vendor_name}")
-            return cached
 
     # Create agent if not provided
     if agent is None:
@@ -186,21 +170,18 @@ def analyze_vendor_swot(
             "swot.competitors.count": len(competitors) if competitors else 0,
         }
     ) as span:
-        result = agent(
-            vendor_name=vendor_name,
-            vendor_website=vendor_website,
-            vendor_description=vendor_description,
-            market_category=category,
-            region=region,
-            competitors=competitors
-        )
+        with scoped_tavily_extract_budget():
+            result = agent(
+                vendor_name=vendor_name,
+                vendor_website=vendor_website,
+                vendor_description=vendor_description,
+                market_category=category,
+                region=region,
+                competitors=competitors
+            )
 
         if hasattr(result, 'swot_analysis'):
             swot = result.swot_analysis
-
-            # Cache the result
-            if use_cache:
-                _save_cached_swot(vendor_website, swot, cache_dir)
 
             # Add span attributes
             set_span_attributes(span, _summarize_swot(swot))
@@ -218,8 +199,7 @@ def batch_analyze_vendors(
     region: Optional[str] = None,
     parallel: bool = True,
     max_workers: int = 3,
-    progress_callback: Optional[Callable[[int, int], None]] = None,
-    use_cache: bool = True
+    progress_callback: Optional[Callable[[int, int], None]] = None
 ) -> List[SWOTAnalysis]:
     """
     Analyze multiple vendors in batch.
@@ -238,8 +218,6 @@ def batch_analyze_vendors(
         Maximum parallel workers
     progress_callback : Callable, optional
         Callback for progress updates (current, total)
-    use_cache : bool
-        Whether to use cached results
 
     Returns
     -------
@@ -262,7 +240,11 @@ def batch_analyze_vendors(
                 agent = agents[i % len(agents)]
                 future = executor.submit(
                     analyze_vendor_swot,
-                    vendor, category, region, None, agent, use_cache
+                    vendor,
+                    category,
+                    region,
+                    None,
+                    agent,
                 )
                 futures[future] = (i, vendor)
 
@@ -297,7 +279,13 @@ def batch_analyze_vendors(
 
         for i, vendor in enumerate(vendors):
             try:
-                swot = analyze_vendor_swot(vendor, category, region, None, agent, use_cache)
+                swot = analyze_vendor_swot(
+                    vendor,
+                    category,
+                    region,
+                    None,
+                    agent,
+                )
                 results.append(swot)
 
                 if progress_callback:
@@ -319,8 +307,7 @@ async def batch_analyze_vendors_async(
     region: Optional[str] = None,
     market_insights: Optional[str] = None,
     max_concurrent: int = 3,
-    progress_callback: Optional[Callable[[int, int], None]] = None,
-    use_cache: bool = True
+    progress_callback: Optional[Callable[[int, int], None]] = None
 ) -> List[Optional[SWOTAnalysis]]:
     """
     Async version of batch SWOT analysis for multiple vendors.
@@ -360,7 +347,11 @@ async def batch_analyze_vendors_async(
                 agent = create_swot_agent(use_tools=True)
                 swot = await asyncio.to_thread(
                     analyze_vendor_swot,
-                    vendor, category, region, market_insights, agent, use_cache
+                    vendor,
+                    category,
+                    region,
+                    market_insights,
+                    agent,
                 )
 
                 results[index] = swot
@@ -582,44 +573,6 @@ def save_swot_agent(agent: dspy.Module, path: str = "data/artifacts/swot_program
     except Exception as e:
         logger.error(f"Failed to save SWOT program: {e}")
         raise
-
-
-def _load_cached_swot(vendor_website: str, cache_dir: str) -> Optional[SWOTAnalysis]:
-    """Load cached SWOT analysis for a vendor."""
-    cache_path = Path(cache_dir)
-    cache_file = cache_path / f"{_cache_key(vendor_website)}.json"
-
-    if not cache_file.exists():
-        return None
-
-    try:
-        with open(cache_file, 'r') as f:
-            data = json.load(f)
-        return SWOTAnalysis(**data)
-    except Exception as e:
-        logger.warning(f"Failed to load cached SWOT: {e}")
-        return None
-
-
-def _save_cached_swot(vendor_website: str, swot: SWOTAnalysis, cache_dir: str) -> None:
-    """Save SWOT analysis to cache."""
-    cache_path = Path(cache_dir)
-    cache_path.mkdir(parents=True, exist_ok=True)
-
-    cache_file = cache_path / f"{_cache_key(vendor_website)}.json"
-
-    try:
-        with open(cache_file, 'w') as f:
-            json.dump(swot.model_dump(), f, indent=2)
-    except Exception as e:
-        logger.warning(f"Failed to cache SWOT: {e}")
-
-
-def _cache_key(vendor_website: str) -> str:
-    """Generate cache key from vendor website."""
-    import hashlib
-    clean_url = vendor_website.lower().replace("https://", "").replace("http://", "").replace("/", "_")
-    return hashlib.md5(clean_url.encode()).hexdigest()[:12]
 
 
 def _summarize_swot(analysis: SWOTAnalysis) -> dict:

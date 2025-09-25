@@ -112,7 +112,7 @@ class RFPReferenceGatherSignature(dspy.Signature):
 
 
 class RFPQuestionGeneratorSignature(dspy.Signature):
-    """Generate a 100-question RFP organized into logical sections."""
+    """Generate an RFP organized into logical sections. You should search for publicly available RFPs in the target category and region to inform your question set. Make sure to add them to the reference documents. Use the insights provided to tailor the questions to the specific market context and challenges. Ensure that the questions are clear, concise, and relevant to evaluating vendors effectively."""
 
     category: str = dspy.InputField(description="Market category or project scope.")
     region: Optional[str] = dspy.InputField(default=None, description="Geographic focus if applicable.")
@@ -120,7 +120,7 @@ class RFPQuestionGeneratorSignature(dspy.Signature):
     reference_documents: List[dict] = dspy.InputField(description="Extracted reference RFP content.")
     expected_question_count: int = dspy.InputField(default=100, description="Target number of questions to produce.")
     question_set: RFPQuestionSet = dspy.OutputField(
-        description="Structured RFP question set with 100 questions grouped by section."
+        description="Structured RFP question set with questions grouped by section."
     )
 
 

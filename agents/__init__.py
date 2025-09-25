@@ -2,7 +2,6 @@
 
 from .pestle_agent import (
     create_pestle_agent,
-    create_pestle_trainset,
     optimize_pestle_agent,
     run_pestle_analysis,
 )
@@ -25,7 +24,6 @@ from .rfp_agent import (
 __all__ = [
     "create_pestle_agent",
     "run_pestle_analysis",
-    "create_pestle_trainset",
     "optimize_pestle_agent",
     "create_vendor_agent",
     "create_vendor_metric",

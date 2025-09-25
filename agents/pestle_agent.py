@@ -109,58 +109,6 @@ def run_pestle_analysis(
         raise ValueError("Failed to generate PESTLE analysis")
 
 
-def create_pestle_trainset(examples: Optional[List[dict]] = None) -> List[Example]:
-    """
-    Create training examples for PESTLE optimization.
-
-    Parameters
-    ----------
-    examples : List[dict], optional
-        Custom examples with category, region, focus_areas
-
-    Returns
-    -------
-    List[Example]
-        DSPy training examples for PESTLE
-    """
-    default_examples = [
-        {
-            "category": "General Industrial Supplies",
-            "region": "United States",
-            "focus_areas": ["economic", "technological", "regulatory"]
-        },
-        {
-            "category": "Cloud Computing Services",
-            "region": "Europe",
-            "focus_areas": ["legal", "technological", "environmental"]
-        },
-        {
-            "category": "Renewable Energy Solutions",
-            "region": None,
-            "focus_areas": ["environmental", "political", "economic"]
-        },
-        {
-            "category": "Healthcare Technology",
-            "region": "Asia Pacific",
-            "focus_areas": ["regulatory", "social", "technological"]
-        }
-    ]
-
-    examples = examples or default_examples
-
-    trainset = []
-    for ex in examples:
-        dspy_example = dspy.Example(
-            category=ex["category"],
-            region=ex.get("region"),
-            focus_areas=ex.get("focus_areas")
-        ).with_inputs("category", "region", "focus_areas")
-        trainset.append(dspy_example)
-
-    logger.info(f"Created PESTLE trainset with {len(trainset)} examples")
-    return trainset
-
-
 def optimize_pestle_agent(
     agent: dspy.Module,
     metric: callable,
@@ -205,12 +153,12 @@ def optimize_pestle_agent(
             "Configure dspy.settings.lm or pass reflection_lm explicitly."
         )
 
-    default_kwargs["reflection_lm"] = reflection_lm
     default_kwargs.update(optimizer_kwargs)
 
     # Create optimizer
     optimizer = optimizer_class(
         metric=metric,
+        reflection_lm=reflection_lm,
         **default_kwargs
     )
 

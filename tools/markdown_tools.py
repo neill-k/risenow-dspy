@@ -1,10 +1,20 @@
-"""DSPy tools for markdown report generation."""
+"""DSPy tools for markdown report generation with post-hoc citation matching."""
 
 import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional, Dict
 import dspy
+from config.lm import create_writing_lm
+from utils.citation_matcher import CitationMatcher
+from utils.source_logger import get_source_logger
+
+
+# Citation formatting signature
+class FormatCitations(dspy.Signature):
+    """Format citations into a clean References section."""
+    citations: List[Dict] = dspy.InputField(desc="List of citation dictionaries with url, title, agent, tool fields")
+    references_section: str = dspy.OutputField(desc="Formatted References section in markdown with numbered citations")
 
 
 # Individual report signatures
@@ -13,7 +23,7 @@ class GenerateVendorReport(dspy.Signature):
     vendor_list: List[Any] = dspy.InputField(desc="List of discovered vendors with details")
     category: str = dspy.InputField(desc="Business category")
     region: str = dspy.InputField(desc="Geographic region")
-    markdown: str = dspy.OutputField(desc="Well-formatted markdown report with vendor table, all details, capabilities, etc.")
+    markdown: str = dspy.OutputField(desc="Well-formatted markdown report with list of vendors, all details, contact info, capabilities, etc.")
 
 
 class GeneratePESTLEReport(dspy.Signature):
@@ -37,7 +47,7 @@ class GenerateSWOTReport(dspy.Signature):
     swot_analyses: List[Any] = dspy.InputField(desc="List of SWOT analyses for vendors")
     category: str = dspy.InputField(desc="Business category")
     region: str = dspy.InputField(desc="Geographic region")
-    markdown: str = dspy.OutputField(desc="SWOT report with summary table and detailed analysis per vendor")
+    markdown: str = dspy.OutputField(desc="SWOT report with summary section and detailed analysis per vendor")
 
 
 class GenerateRFPReport(dspy.Signature):
@@ -70,11 +80,17 @@ class GenerateCombinedReport(dspy.Signature):
 
 
 class ReportGenerator(dspy.Module):
-    """DSPy module for generating all types of markdown reports."""
+    """DSPy module for generating all types of markdown reports with post-hoc citations."""
 
-    def __init__(self, model: Optional[dspy.LM] = None):
+    def __init__(self, model: Optional[dspy.LM] = None, session_id: Optional[str] = None):
         super().__init__()
-        self.model = model or dspy.settings.lm
+        # Use dedicated writing LM for markdown generation to keep orchestration LM separate
+        self.model = model or create_writing_lm()
+
+        # Initialize citation matcher with session
+        self.session_id = session_id or get_source_logger().session_id
+        self.citation_matcher = CitationMatcher(self.session_id)
+        self.citation_formatter = dspy.ChainOfThought(FormatCitations)
 
         # Individual report generators
         self.vendor_gen = dspy.ChainOfThought(GenerateVendorReport)
@@ -84,35 +100,87 @@ class ReportGenerator(dspy.Module):
         self.rfp_gen = dspy.ChainOfThought(GenerateRFPReport)
         self.combined_gen = dspy.ChainOfThought(GenerateCombinedReport)
 
+    def _format_citations(self, citations: List[Dict]) -> str:
+        """Format citations into a References section."""
+        if not citations:
+            return ""
+
+        # Deduplicate by URL
+        seen_urls = set()
+        unique_citations = []
+        for cite in citations:
+            if cite.get('url') and cite['url'] not in seen_urls:
+                unique_citations.append(cite)
+                seen_urls.add(cite['url'])
+
+        if not unique_citations:
+            return ""
+
+        with dspy.context(lm=self.model):
+            result = self.citation_formatter(citations=unique_citations)
+        return result.references_section
+
+    def _append_citations(self, content: str, section_name: str, n_results: int = 5) -> str:
+        """Find and append citations for a section."""
+        # Find relevant citations for the content
+        citations = self.citation_matcher.find_citations_for_section(
+            section_text=content,
+            section_name=section_name,
+            n_results_per_claim=2,
+            max_total_citations=n_results
+        )
+
+        if citations:
+            references = self._format_citations(citations)
+            if references and "## References" not in content:
+                content = content + "\n\n" + references
+
+        return content
+
     def generate_vendor_report(self, vendor_list: List[Any], category: str, region: str) -> str:
-        """Generate vendor discovery report."""
+        """Generate vendor discovery report with citations."""
         with dspy.context(lm=self.model):
             result = self.vendor_gen(vendor_list=vendor_list, category=category, region=region)
-        return result.markdown
+
+        # Append citations post-hoc
+        content_with_citations = self._append_citations(result.markdown, "vendor", n_results=10)
+        return content_with_citations
 
     def generate_pestle_report(self, pestle_analysis: Any, category: str, region: str) -> str:
-        """Generate PESTLE analysis report."""
+        """Generate PESTLE analysis report with citations."""
         with dspy.context(lm=self.model):
             result = self.pestle_gen(pestle_analysis=pestle_analysis, category=category, region=region)
-        return result.markdown
+
+        # Append citations post-hoc
+        content_with_citations = self._append_citations(result.markdown, "pestle", n_results=8)
+        return content_with_citations
 
     def generate_porters_report(self, porters_analysis: Any, category: str, region: str) -> str:
-        """Generate Porter's Five Forces report."""
+        """Generate Porter's Five Forces report with citations."""
         with dspy.context(lm=self.model):
             result = self.porters_gen(porters_analysis=porters_analysis, category=category, region=region)
-        return result.markdown
+
+        # Append citations post-hoc
+        content_with_citations = self._append_citations(result.markdown, "porters", n_results=8)
+        return content_with_citations
 
     def generate_swot_report(self, swot_analyses: List[Any], category: str, region: str) -> str:
-        """Generate SWOT analyses report."""
+        """Generate SWOT analyses report with citations."""
         with dspy.context(lm=self.model):
             result = self.swot_gen(swot_analyses=swot_analyses, category=category, region=region)
-        return result.markdown
+
+        # Append citations post-hoc
+        content_with_citations = self._append_citations(result.markdown, "swot", n_results=10)
+        return content_with_citations
 
     def generate_rfp_report(self, rfp_question_set: Any, category: str, region: str) -> str:
-        """Generate RFP questions report."""
+        """Generate RFP questions report with citations."""
         with dspy.context(lm=self.model):
             result = self.rfp_gen(rfp_question_set=rfp_question_set, category=category, region=region)
-        return result.markdown
+
+        # Append citations post-hoc
+        content_with_citations = self._append_citations(result.markdown, "rfp", n_results=8)
+        return content_with_citations
 
     def generate_combined_report(
         self,
@@ -124,7 +192,7 @@ class ReportGenerator(dspy.Module):
         swot_report: Optional[str] = None,
         rfp_report: Optional[str] = None
     ) -> str:
-        """Generate combined analysis report."""
+        """Generate combined analysis report with citations."""
         with dspy.context(lm=self.model):
             result = self.combined_gen(
                 category=category,
@@ -135,7 +203,10 @@ class ReportGenerator(dspy.Module):
                 swot_report=swot_report,
                 rfp_report=rfp_report
             )
-        return result.markdown
+
+        # For combined report, gather citations from all sections
+        content_with_citations = self._append_citations(result.markdown, "combined", n_results=15)
+        return content_with_citations
 
 
 def ensure_output_dir(output_dir: str) -> Path:
@@ -172,13 +243,15 @@ def output_report(
     swot_analyses: Optional[List[Any]] = None,
     rfp_question_set: Optional[Any] = None,
     save_intermediate: bool = True,
-    model: Optional[dspy.LM] = None
+    model: Optional[dspy.LM] = None,
+    session_id: Optional[str] = None
 ) -> Dict[str, str]:
     """
-    Generate and save comprehensive markdown reports.
+    Generate and save comprehensive markdown reports with post-hoc citations.
 
     This tool generates individual markdown files for each analysis component
     and combines them into a comprehensive report, all using LLM for intelligent formatting.
+    Citations are added post-hoc from logged Tavily search results.
 
     Parameters
     ----------
@@ -202,6 +275,8 @@ def output_report(
         Whether to save individual reports (default True)
     model : dspy.LM, optional
         Language model to use for generation
+    session_id : str, optional
+        Session ID for citation matching (uses current session if not provided)
 
     Returns
     -------
@@ -209,7 +284,8 @@ def output_report(
         Dictionary mapping report types to file paths
     """
     ensure_output_dir(output_dir)
-    generator = ReportGenerator(model=model)
+    writing_model = model or create_writing_lm()
+    generator = ReportGenerator(model=writing_model, session_id=session_id)
     generated_files = {}
 
     # Generate individual reports
@@ -268,15 +344,15 @@ def output_report(
 
 def create_dspy_report_tool():
     """
-    Create a DSPy Tool instance for the output_report function.
+    Create a DSPy Tool instance for the output_report function with citation support.
 
     Returns
     -------
     dspy.Tool
-        DSPy tool for report generation
+        DSPy tool for report generation with post-hoc citations
     """
     return dspy.Tool(
         output_report,
         name="output_report",
-        desc="Generate comprehensive markdown reports from analysis results. Creates individual reports per section and combined report. Args: category:str, region:str, output_dir:str, vendor_list:List=None, pestle_analysis=None, porters_analysis=None, swot_analyses:List=None, rfp_question_set=None, save_intermediate:bool=True -> Dict[str,str] of file paths"
+        desc="Generate comprehensive markdown reports with citations from analysis results. Creates individual reports per section and combined report. Args: category:str, region:str, output_dir:str, vendor_list:List=None, pestle_analysis=None, porters_analysis=None, swot_analyses:List=None, rfp_question_set=None, save_intermediate:bool=True, session_id:str=None -> Dict[str,str] of file paths"
     )

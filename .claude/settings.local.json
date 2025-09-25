@@ -9,7 +9,11 @@
       "Bash(git commit:*)",
       "Bash(git add:*)",
       "Bash(dir agents)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(pandoc:*)",
+      "Bash(sed:*)",
+      "Bash(uv pip install:*)",
+      "Bash(awk:*)"
     ],
     "deny": [],
     "ask": []

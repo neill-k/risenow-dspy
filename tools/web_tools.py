@@ -1,7 +1,11 @@
 """Web search and page fetching tools for the vendor discovery system."""
 
 import logging
-from typing import Iterable, Tuple, List, Dict, Any, Optional
+from typing import Iterable, Tuple, List, Dict, Any, Optional, Callable
+import inspect
+from pathlib import Path
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 import httpx
 from bs4 import BeautifulSoup
@@ -10,11 +14,51 @@ from tavily import TavilyClient
 import dspy
 from config.environment import TAVILY_API_KEY, TAVILY_MAX_EXTRACT_CALLS
 from models.citation import Citation
+from utils.source_logger import get_source_logger
 
 
 logger = logging.getLogger(__name__)
 
-_extract_call_count = 0
+# Optional UI log hook to surface tool activity to a CLI progress view
+TOOL_UI_LOG: Optional[Callable[[str], None]] = None
+
+_extract_call_count_var: ContextVar[int] = ContextVar(
+    "tavily_extract_call_count",
+    default=0,
+)
+_extract_limit_var: ContextVar[int] = ContextVar(
+    "tavily_extract_limit",
+    default=TAVILY_MAX_EXTRACT_CALLS,
+)
+
+
+@contextmanager
+def scoped_tavily_extract_budget(limit: Optional[int] = None):
+    """Reset the Tavily extract budget for a logical unit of work.
+
+    Parameters
+    ----------
+    limit : int | None
+        Optional override for the number of extract calls permitted in the scope.
+        Defaults to the global ``TAVILY_MAX_EXTRACT_CALLS`` when omitted.
+    """
+
+    normalized_limit = TAVILY_MAX_EXTRACT_CALLS if limit is None else max(0, int(limit))
+    limit_token = _extract_limit_var.set(normalized_limit)
+    count_token = _extract_call_count_var.set(0)
+    try:
+        yield
+    finally:
+        _extract_call_count_var.reset(count_token)
+        _extract_limit_var.reset(limit_token)
+
+
+def get_tavily_extract_budget_state() -> Tuple[int, int]:
+    """Return the (used_calls, remaining_calls) for the active extract budget."""
+
+    limit = max(0, int(_extract_limit_var.get()))
+    used = max(0, int(_extract_call_count_var.get()))
+    return used, max(limit - used, 0)
 
 
 def _get_extract_warning_threshold(limit: int) -> int:
@@ -70,6 +114,23 @@ def _ensure_url_list(urls) -> list[str]:
     raise TypeError("tavily_extract expects a string or iterable of strings")
 
 
+def _detect_calling_agent() -> str:
+    """Detect which agent is calling this function using stack inspection."""
+    for frame_info in inspect.stack():
+        filename = frame_info.filename
+        if 'agent' in filename and not filename.endswith('web_tools.py'):
+            # Extract agent name from file path
+            agent_name = Path(filename).stem
+            return agent_name
+    return "unknown"
+
+
+def set_tool_ui_log(callback: Optional[Callable[[str], None]]) -> None:
+    """Set or clear a UI logging callback for tool activity messages."""
+    global TOOL_UI_LOG
+    TOOL_UI_LOG = callback
+
+
 def search_web(query: str, max_results: int = 20):
     """
     Search the web using Tavily API.
@@ -81,10 +142,34 @@ def search_web(query: str, max_results: int = 20):
     Returns:
         List of dictionaries with title, url, and snippet suitable for agent triage
     """
+    if TOOL_UI_LOG:
+        try:
+            TOOL_UI_LOG(f"🔎 Searching the web: '{query}' (max_results={max_results})")
+        except Exception:
+            pass
+
     tav = TavilyClient(api_key=TAVILY_API_KEY)
     r = tav.search(query=query, max_results=max_results, include_answer=False)
-    return [{"title": it.get("title",""), "url": it["url"], "snippet": it.get("content","")}
-            for it in r.get("results", [])]
+    results = [{"title": it.get("title",""), "url": it["url"], "snippet": it.get("content","")}
+               for it in r.get("results", [])]
+
+    # Log results to flat file
+    if results:
+        source_logger = get_source_logger()
+        agent_name = _detect_calling_agent()
+        source_logger.log_tavily_results(
+            results=results,
+            query=query,
+            tool_name="tavily_search",
+            agent_name=agent_name
+        )
+
+    if TOOL_UI_LOG:
+        try:
+            TOOL_UI_LOG(f"🔎 Search complete: {len(results)} result(s)")
+        except Exception:
+            pass
+    return results
 
 
 def create_citation_from_tavily(
@@ -147,9 +232,9 @@ def tavily_search(query: str, max_results: int = 20, return_citations: bool = Fa
 def tavily_extract(urls, return_citations: bool = False):
     f"""
     Extract full text / metadata from one or more URLs via Tavily Extract API.
-    Results are truncated to 200,000 characters per URL.
-    This tool is limited to {TAVILY_MAX_EXTRACT_CALLS} calls per process; adjust
-    ``TAVILY_MAX_EXTRACT_CALLS`` in your environment to raise or lower the cap.
+    Results are truncated to 100,000 characters per URL.
+    This tool is limited to {TAVILY_MAX_EXTRACT_CALLS} calls per scoped budget.
+
 
     Parameters
     ----------
@@ -162,18 +247,18 @@ def tavily_extract(urls, return_citations: bool = False):
     -------
     dict or tuple[dict, list[Citation]]
         Mapping ``url`` -> extraction result from Tavily.
-        Each result's content is truncated to 200,000 characters.
+        Each result's content is truncated to 100,000 characters.
         If return_citations is True, also returns Citation objects.
     """
     url_list = _ensure_url_list(urls)
-    if len(url_list) > 3:
+    if len(url_list) > 2:
         raise ValueError(
-            f"❌ tavily_extract received {len(url_list)} URLs, but the maximum is 3 per call.\n\n"
+            f"❌ tavily_extract received {len(url_list)} URLs, but the maximum is 2 per call.\n\n"
             f"💡 RECOMMENDATION: Are you sure you need to extract the full content of that many pages? "
-            f"Typically only a few pages are needed. The tool allows a maximum of 3 URLs per call. "
-            f"Try extracting 1-3 most relevant pages first, review the content, then decide if more are needed.\n\n"
+            f"Typically only a few pages are needed. The tool allows a maximum of 2 URLs per call. "
+            f"Try extracting 1-2 most relevant pages first, review the content, then decide if more are needed.\n\n"
             f"📋 You provided: {url_list}\n"
-            f"✅ SOLUTION: Call tavily_extract with only the first 3 URLs, or better yet, "
+            f"✅ SOLUTION: Call tavily_extract with only 2 URLs. "
             f"prioritize and select the most relevant ones."
         )
     if not url_list:
@@ -193,10 +278,29 @@ def tavily_extract(urls, return_citations: bool = False):
                     if isinstance(item, dict):
                         # Truncate raw_content if present
                         if "raw_content" in item and item["raw_content"]:
-                            item["raw_content"] = item["raw_content"][:200000]
+                            item["raw_content"] = item["raw_content"][:100000]
                         # Truncate content if present
                         if "content" in item and item["content"]:
-                            item["content"] = item["content"][:200000]
+                            item["content"] = item["content"][:100000]
+
+                # Log extract results to flat file
+                if results:
+                    source_logger = get_source_logger()
+                    agent_name = _detect_calling_agent()
+                    # Convert to same format as search results for consistent logging
+                    formatted_results = []
+                    for item in results:
+                        formatted_results.append({
+                            "title": item.get("title", ""),
+                            "url": item.get("url", ""),
+                            "snippet": item.get("content", "")  # Keep snippet shorter
+                        })
+                    source_logger.log_tavily_results(
+                        results=formatted_results,
+                        query=f"extract:{url_list}",
+                        tool_name="tavily_extract",
+                        agent_name=agent_name
+                    )
 
         if return_citations:
             citations = []
@@ -234,9 +338,37 @@ def tavily_crawl(url, max_depth: int = 1, max_pages: int = 25):
         Crawl job summary returned by Tavily.
     """
 
+    if TOOL_UI_LOG:
+        try:
+            TOOL_UI_LOG(f"🕷️ Crawling: {url} (depth={max_depth}, max_pages={max_pages})")
+        except Exception:
+            pass
+
     try:
         tav = TavilyClient(api_key=TAVILY_API_KEY)
-        return tav.crawl(url=url, max_depth=max_depth, max_pages=max_pages)
+        resp = tav.crawl(url=url, max_depth=max_depth, max_pages=max_pages)
+
+        # Log crawl results to flat file
+        if resp and isinstance(resp, dict):
+            source_logger = get_source_logger()
+            agent_name = _detect_calling_agent()
+            # Convert crawl results to consistent format
+            if "results" in resp and isinstance(resp["results"], list):
+                formatted_results = []
+                for item in resp["results"]:
+                    formatted_results.append({
+                        "title": item.get("title", ""),
+                        "url": item.get("url", ""),
+                        "snippet": item.get("content", "")[:500] if "content" in item else ""
+                    })
+                source_logger.log_tavily_results(
+                    results=formatted_results,
+                    query=f"crawl:{url}",
+                    tool_name="tavily_crawl",
+                    agent_name=agent_name
+                )
+
+        return resp
     except Exception as e:  # pragma: no cover
         raise RuntimeError(f"Tavily crawl failed: {e}") from e
 
@@ -257,9 +389,37 @@ def tavily_map(url, max_results: int = 10):
     dict
         Map response with nodes/edges describing relationships.
     """
+    if TOOL_UI_LOG:
+        try:
+            TOOL_UI_LOG(f"🗺️ Mapping site: {url} (max_results={max_results})")
+        except Exception:
+            pass
+
     try:
         tav = TavilyClient(api_key=TAVILY_API_KEY)
-        return tav.map(url=url, max_results=max_results)
+        resp = tav.map(url=url, max_results=max_results)
+
+        # Log map results to flat file
+        if resp and isinstance(resp, dict):
+            source_logger = get_source_logger()
+            agent_name = _detect_calling_agent()
+            # Convert map results to consistent format
+            if "results" in resp and isinstance(resp["results"], list):
+                formatted_results = []
+                for item in resp["results"]:
+                    formatted_results.append({
+                        "title": item.get("title", ""),
+                        "url": item.get("url", ""),
+                        "snippet": item.get("content", "")[:500] if "content" in item else ""
+                    })
+                source_logger.log_tavily_results(
+                    results=formatted_results,
+                    query=f"map:{url}",
+                    tool_name="tavily_map",
+                    agent_name=agent_name
+                )
+
+        return resp
     except Exception as e:  # pragma: no cover
         raise RuntimeError(f"Tavily map failed: {e}") from e
 
@@ -285,17 +445,17 @@ def _tool_tavily_extract(urls):
             f"prioritize and select the most relevant ones."
         )
 
-    global _extract_call_count
-    limit = TAVILY_MAX_EXTRACT_CALLS
+    limit = _extract_limit_var.get()
+    limit = max(0, int(limit))
     if limit <= 0:
         message = (
-            "❌ tavily_extract is disabled because TAVILY_MAX_EXTRACT_CALLS is set to 0.\n\n"
-            "💡 RECOMMENDATION: Increase TAVILY_MAX_EXTRACT_CALLS in your environment or rely on tavily_search snippets."
+            "❌ tavily_extract is disabled because the active extract budget allows 0 calls.\n\n"
         )
         logger.error(message)
         raise RuntimeError(message)
 
-    if _extract_call_count >= limit:
+    call_count = _extract_call_count_var.get()
+    if call_count >= limit:
         message = (
             f"❌ tavily_extract budget exhausted. Limit of {limit} calls reached for this run.\n\n"
             "💡 RECOMMENDATION: Reduce extract usage, cache prior results, or increase TAVILY_MAX_EXTRACT_CALLS."
@@ -304,14 +464,23 @@ def _tool_tavily_extract(urls):
         raise RuntimeError(message)
 
     threshold = _get_extract_warning_threshold(limit)
-    remaining_before_call = limit - _extract_call_count
+    remaining_before_call = max(limit - call_count, 0)
     if threshold and remaining_before_call <= threshold:
         logger.warning(_format_extract_warning(remaining_before_call, limit))
 
     arg = urls if isinstance(urls, str) else url_list
+    if TOOL_UI_LOG:
+        try:
+            preview = url_list[:3]
+            ellipsis = "" if len(url_list) <= 3 else " …"
+            TOOL_UI_LOG(f"📄 Extracting page(s): {preview}{ellipsis}")
+        except Exception:
+            pass
+
     response = tavily_extract(arg)
-    _extract_call_count += 1
-    remaining_after_call = max(limit - _extract_call_count, 0)
+    updated_count = call_count + 1
+    _extract_call_count_var.set(updated_count)
+    remaining_after_call = max(limit - updated_count, 0)
     if threshold and remaining_after_call <= threshold:
         warning_message = _format_extract_warning(remaining_after_call, limit)
         logger.warning(warning_message)

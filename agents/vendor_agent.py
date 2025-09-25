@@ -28,7 +28,7 @@ __all__ = [
 ]
 
 
-def create_vendor_agent(use_tools: bool = True, max_iters: int = 50) -> dspy.Module:
+def create_vendor_agent(max_iters: int = 50) -> dspy.Module:
     """Create the vendor discovery agent.
 
     Parameters
@@ -43,17 +43,14 @@ def create_vendor_agent(use_tools: bool = True, max_iters: int = 50) -> dspy.Mod
     dspy.Module
         Configured DSPy module for vendor discovery.
     """
-    if use_tools:
-        tools = create_dspy_tools()
-        agent = dspy.ReAct(
-            VendorSearchResult,
-            tools=list(tools),
-            max_iters=max_iters,
-        )
-        logger.info("Created vendor ReAct agent with %s tools", len(tools))
-    else:
-        agent = dspy.ChainOfThought(VendorSearchResult)
-        logger.info("Created vendor ChainOfThought agent")
+
+    tools = create_dspy_tools()
+    agent = dspy.ReAct(
+        VendorSearchResult,
+        tools=list(tools),
+        max_iters=max_iters,
+    )
+    logger.info("Created vendor ReAct agent with %s tools", len(tools))
     return agent
 
 
@@ -136,7 +133,7 @@ def _program_load_candidates(path: Path) -> list[Path]:
     return variants
 
 
-def load_vendor_agent(path: str, use_tools: bool = True, max_iters: int = 50) -> Optional[dspy.Module]:
+def load_vendor_agent(path: str, max_iters: int = 50) -> Optional[dspy.Module]:
     """Load a previously optimized vendor agent from disk if available."""
     candidate = Path(path)
     resolved_path: Optional[Path] = None
@@ -149,7 +146,7 @@ def load_vendor_agent(path: str, use_tools: bool = True, max_iters: int = 50) ->
         logger.debug("Vendor program not found at %s", candidate)
         return None
 
-    agent = create_vendor_agent(use_tools=use_tools, max_iters=max_iters)
+    agent = create_vendor_agent(max_iters=max_iters)
     agent.load(str(resolved_path))
 
     if resolved_path != candidate:

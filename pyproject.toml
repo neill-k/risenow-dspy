@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "beautifulsoup4>=4.13.5",
+    "chromadb>=0.5.5",
     "dspy[mcp]>=3.0.3",
     "langfuse>=3.3.4",
     "openinference-instrumentation-dspy>=0.1.29",
